@@ -142,6 +142,15 @@ async function renderHistory() {
     return;
   }
 
+  // Build a <select> snippet for assigning a domain to a category
+  const catOptions = categories.map((c) => `<option value="${c.id}">${c.name}</option>`).join('');
+  const assignSelect = (domain) => categories.length === 0 ? '' : `
+    <select class="history-cat-select" data-domain="${domain}" title="Assign to category">
+      <option value="">+ category</option>
+      ${catOptions}
+    </select>
+  `;
+
   container.innerHTML = days.map((dateStr) => {
     const usage = weeklyUsage[dateStr];
 
@@ -151,14 +160,14 @@ async function renderHistory() {
       const cat = getCategoryForDomain(domain, categories);
       const key = cat ? cat.id : '_uncategorized';
       if (!grouped[key]) {
-        grouped[key] = { label: cat ? cat.name : 'Uncategorized', entries: [] };
+        grouped[key] = { label: cat ? cat.name : 'Uncategorized', entries: [], isUncategorized: !cat };
       }
       grouped[key].entries.push([domain, sec]);
     }
 
     const totalSec = Object.values(usage).reduce((a, b) => a + b, 0);
 
-    const groupHtml = Object.values(grouped).map(({ label, entries }) => {
+    const groupHtml = Object.values(grouped).map(({ label, entries, isUncategorized }) => {
       const sortedEntries = entries.sort(([, a], [, b]) => b - a);
       const groupSec = entries.reduce((s, [, v]) => s + v, 0);
       return `
@@ -168,7 +177,10 @@ async function renderHistory() {
         </tr>
         ${sortedEntries.map(([d, s]) => `
           <tr>
-            <td style="padding:3px 24px;color:#6b7280;font-size:12px">${d}</td>
+            <td style="padding:3px 24px;color:#6b7280;font-size:12px">
+              ${d}
+              ${isUncategorized ? assignSelect(d) : ''}
+            </td>
             <td style="padding:3px 16px;font-size:12px">${formatDuration(s)}</td>
           </tr>
         `).join('')}
@@ -187,6 +199,25 @@ async function renderHistory() {
       </div>
     `;
   }).join('');
+
+  // Wire up category assign selects
+  container.querySelectorAll('.history-cat-select').forEach((sel) => {
+    sel.addEventListener('change', async () => {
+      const catId = sel.value;
+      if (!catId) return;
+      const domain = sel.dataset.domain;
+      const cat = settings.categories.find((c) => c.id === catId);
+      if (!cat) return;
+      // Remove from any existing category first
+      for (const c of settings.categories) {
+        c.domains = c.domains.filter((d) => d !== domain);
+      }
+      cat.domains.push(domain);
+      await storage.saveSettings(settings);
+      showToast(`${domain} → ${cat.name}`);
+      await renderHistory();
+    });
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -232,7 +263,16 @@ async function renderCategories() {
     <div class="cat-row" id="cat-row-${cat.id}">
       <div class="cat-row-header">
         <span class="cat-row-name">${cat.name}</span>
-        <span class="cat-row-meta">${cat.budgetMinutes}m/day · ${cat.domains.length} sites</span>
+        <span class="cat-row-meta">
+          <span id="cat-budget-display-${cat.id}">${cat.budgetMinutes}m/day</span>
+          <button class="btn btn-sm cat-edit-budget-btn" data-cat="${cat.id}" title="Edit budget">✎</button>
+          <span class="cat-budget-edit" id="cat-budget-edit-${cat.id}" style="display:none">
+            <input type="number" class="cat-budget-input" id="cat-budget-input-${cat.id}" value="${cat.budgetMinutes}" min="1" max="1440" style="width:60px">
+            <button class="btn btn-primary btn-sm cat-budget-save-btn" data-cat="${cat.id}">Save</button>
+            <button class="btn btn-sm cat-budget-cancel-btn" data-cat="${cat.id}">Cancel</button>
+          </span>
+          · ${cat.domains.length} sites
+        </span>
         <div class="cat-row-actions">
           <button class="btn btn-sm cat-toggle-btn" data-cat="${cat.id}">▼ Domains</button>
           <button class="btn btn-danger btn-sm cat-delete-btn" data-cat="${cat.id}">✕</button>
@@ -263,6 +303,48 @@ async function renderCategories() {
       const isHidden = domainsEl.style.display === 'none';
       domainsEl.style.display = isHidden ? 'block' : 'none';
       btn.textContent = isHidden ? '▲ Domains' : '▼ Domains';
+    });
+  });
+
+  // Wire up budget edit buttons
+  container.querySelectorAll('.cat-edit-budget-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      document.getElementById(`cat-budget-display-${btn.dataset.cat}`).style.display = 'none';
+      btn.style.display = 'none';
+      document.getElementById(`cat-budget-edit-${btn.dataset.cat}`).style.display = 'inline-flex';
+    });
+  });
+
+  container.querySelectorAll('.cat-budget-cancel-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      document.getElementById(`cat-budget-display-${btn.dataset.cat}`).style.display = '';
+      document.querySelector(`.cat-edit-budget-btn[data-cat="${btn.dataset.cat}"]`).style.display = '';
+      document.getElementById(`cat-budget-edit-${btn.dataset.cat}`).style.display = 'none';
+    });
+  });
+
+  container.querySelectorAll('.cat-budget-save-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const catId = btn.dataset.cat;
+      const cat = settings.categories.find((c) => c.id === catId);
+      if (!cat) return;
+      const newBudget = parseInt(document.getElementById(`cat-budget-input-${catId}`).value, 10);
+      if (!newBudget || newBudget < 1) return;
+      if (newBudget === cat.budgetMinutes) {
+        // No change — just collapse
+        document.getElementById(`cat-budget-display-${catId}`).style.display = '';
+        document.querySelector(`.cat-edit-budget-btn[data-cat="${catId}"]`).style.display = '';
+        document.getElementById(`cat-budget-edit-${catId}`).style.display = 'none';
+        return;
+      }
+      const nudge = newBudget > cat.budgetMinutes
+        ? `Increasing ${cat.name} budget from ${cat.budgetMinutes}m to ${newBudget}m. Are you sure you want to give yourself more time?`
+        : `Decreasing ${cat.name} budget from ${cat.budgetMinutes}m to ${newBudget}m. Staying disciplined — confirm?`;
+      if (!confirm(nudge)) return;
+      cat.budgetMinutes = newBudget;
+      await storage.saveSettings(settings);
+      showToast(`${cat.name} budget updated to ${newBudget}m`);
+      await renderCategories();
     });
   });
 
@@ -393,7 +475,8 @@ document.getElementById('save-settings-btn').addEventListener('click', async () 
 });
 
 document.getElementById('reset-today-btn').addEventListener('click', async () => {
-  if (!confirm('Reset all tracking data for today?')) return;
+  if (!confirm("Reset all tracking data for today? This cannot be undone.")) return;
+  if (!confirm("Are you sure? Today's data will be permanently deleted.")) return;
   await storage.saveUsageForDate(localDateStr(), {});
   await loadData();
   await renderOverview();

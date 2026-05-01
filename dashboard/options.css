@@ -285,3 +285,30 @@ body {
   align-items: center;
   gap: 8px;
 }
+
+/* History category assign select */
+.history-cat-select {
+  margin-left: 6px;
+  font-size: 11px;
+  padding: 1px 4px;
+  border-radius: 4px;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  color: #475569;
+  cursor: pointer;
+  vertical-align: middle;
+}
+
+/* Inline budget edit */
+.cat-budget-edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.cat-budget-input {
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid #cbd5e1;
+  font-size: 12px;
+}
