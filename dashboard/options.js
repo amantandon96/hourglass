@@ -66,29 +66,6 @@ async function renderOverview() {
   const todayUsage = weeklyUsage[today] ?? {};
   const categories = settings.categories ?? [];
 
-  if (categories.length === 0) {
-    document.getElementById('stat-today').textContent = '—';
-    document.getElementById('stat-week').textContent = '—';
-    document.getElementById('stat-remaining').textContent = '—';
-    document.getElementById('stat-today-label').textContent = 'today';
-    document.getElementById('stat-week-label').textContent = 'this week';
-    document.getElementById('stat-remaining-label').textContent = 'budget left';
-  } else {
-    const cat0 = categories[0];
-    const sec0Today = computeCategorySeconds(todayUsage, cat0);
-    const sec0Week = Object.values(weeklyUsage).reduce(
-      (sum, u) => sum + computeCategorySeconds(u, cat0), 0
-    );
-    const remain0 = Math.max(0, cat0.budgetMinutes * 60 - sec0Today);
-
-    document.getElementById('stat-today').textContent = formatDuration(sec0Today);
-    document.getElementById('stat-week').textContent = formatDuration(sec0Week);
-    document.getElementById('stat-remaining').textContent = formatDuration(remain0);
-    document.getElementById('stat-today-label').textContent = `${cat0.name} today`;
-    document.getElementById('stat-week-label').textContent = `${cat0.name} this week`;
-    document.getElementById('stat-remaining-label').textContent = `${cat0.name} budget left`;
-  }
-
   // Stacked weekly bar chart
   const labels = [];
   for (let i = 6; i >= 0; i--) {
