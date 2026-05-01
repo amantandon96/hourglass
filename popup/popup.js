@@ -1,5 +1,14 @@
 // popup/popup.js
 import { storage } from '../shared/storage/index.js';
+
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
 import {
   getCategoryForDomain,
   computeCategorySeconds,
@@ -47,7 +56,7 @@ async function render() {
       const fillPct = Math.min(pct, 100);
       return `
         <div class="category-card">
-          <div class="category-name">${cat.name.toUpperCase()}</div>
+          <div class="category-name">${escapeHtml(cat.name).toUpperCase()}</div>
           <div class="bar-wrap">
             <div class="bar-fill" style="width:${fillPct}%;background:${color}"></div>
           </div>

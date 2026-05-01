@@ -1,5 +1,14 @@
 // dashboard/options.js
 import { storage } from '../shared/storage/index.js';
+
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
 import {
   getCategoryForDomain,
   computeCategorySeconds,
@@ -123,7 +132,7 @@ async function renderOverview() {
     const cat = getCategoryForDomain(domain, categories);
     const catIdx = cat ? categories.indexOf(cat) : -1;
     const catLabel = cat
-      ? `<span class="leisure-badge" style="background:${CATEGORY_COLORS[catIdx % CATEGORY_COLORS.length]}22;color:${CATEGORY_COLORS[catIdx % CATEGORY_COLORS.length]};border:1px solid ${CATEGORY_COLORS[catIdx % CATEGORY_COLORS.length]}44">${cat.name}</span>`
+      ? `<span class="leisure-badge" style="background:${CATEGORY_COLORS[catIdx % CATEGORY_COLORS.length]}22;color:${CATEGORY_COLORS[catIdx % CATEGORY_COLORS.length]};border:1px solid ${CATEGORY_COLORS[catIdx % CATEGORY_COLORS.length]}44">${escapeHtml(cat.name)}</span>`
       : '<span style="color:#475569;font-size:11px">—</span>';
     return `<tr><td>${domain}</td><td>${catLabel}</td><td>${formatDuration(sec)}</td></tr>`;
   }).join('') || '<tr><td colspan="3" style="color:#9ca3af;text-align:center;padding:16px">No data today</td></tr>';
@@ -143,7 +152,7 @@ async function renderHistory() {
   }
 
   // Build a <select> snippet for assigning a domain to a category
-  const catOptions = categories.map((c) => `<option value="${c.id}">${c.name}</option>`).join('');
+  const catOptions = categories.map((c) => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('');
   const assignSelect = (domain) => categories.length === 0 ? '' : `
     <select class="history-cat-select" data-domain="${domain}" title="Assign to category">
       <option value="">+ category</option>
@@ -160,7 +169,7 @@ async function renderHistory() {
       const cat = getCategoryForDomain(domain, categories);
       const key = cat ? cat.id : '_uncategorized';
       if (!grouped[key]) {
-        grouped[key] = { label: cat ? cat.name : 'Uncategorized', entries: [], isUncategorized: !cat };
+        grouped[key] = { label: cat ? escapeHtml(cat.name) : 'Uncategorized', entries: [], isUncategorized: !cat };
       }
       grouped[key].entries.push([domain, sec]);
     }
@@ -241,7 +250,7 @@ async function renderSites() {
   tbody.innerHTML = sorted.map(([domain, sec]) => {
     const cat = getCategoryForDomain(domain, categories);
     const catLabel = cat
-      ? `<span class="leisure-badge">${cat.name}</span>`
+      ? `<span class="leisure-badge">${escapeHtml(cat.name)}</span>`
       : '<span style="color:#475569;font-size:11px">—</span>';
     return `<tr><td>${domain}</td><td>${catLabel}</td><td>${formatDuration(sec)}</td></tr>`;
   }).join('') || '<tr><td colspan="3" style="color:#9ca3af;text-align:center;padding:16px;font-size:12px">No sites tracked this week.</td></tr>';
@@ -262,7 +271,7 @@ async function renderCategories() {
   container.innerHTML = categories.map((cat) => `
     <div class="cat-row" id="cat-row-${cat.id}">
       <div class="cat-row-header">
-        <span class="cat-row-name">${cat.name}</span>
+        <span class="cat-row-name">${escapeHtml(cat.name)}</span>
         <span class="cat-row-meta">
           <span id="cat-budget-display-${cat.id}">${cat.budgetMinutes}m/day</span>
           <button class="btn btn-sm cat-edit-budget-btn" data-cat="${cat.id}" title="Edit budget">✎</button>
@@ -338,8 +347,8 @@ async function renderCategories() {
         return;
       }
       const nudge = newBudget > cat.budgetMinutes
-        ? `Increasing ${cat.name} budget from ${cat.budgetMinutes}m to ${newBudget}m. Are you sure you want to give yourself more time?`
-        : `Decreasing ${cat.name} budget from ${cat.budgetMinutes}m to ${newBudget}m. Staying disciplined — confirm?`;
+        ? `Increasing ${escapeHtml(cat.name)} budget from ${cat.budgetMinutes}m to ${newBudget}m. Are you sure you want to give yourself more time?`
+        : `Decreasing ${escapeHtml(cat.name)} budget from ${cat.budgetMinutes}m to ${newBudget}m. Staying disciplined — confirm?`;
       if (!confirm(nudge)) return;
       cat.budgetMinutes = newBudget;
       await storage.saveSettings(settings);
@@ -403,7 +412,7 @@ async function addDomainToCategory(catId) {
   if (existingCat) {
     conflictEl.style.display = 'flex';
     conflictEl.innerHTML = `
-      <span>"${domain}" is in ${existingCat.name} — move it here?</span>
+      <span>"${escapeHtml(domain)}" is in ${escapeHtml(existingCat.name)} — move it here?</span>
       <button class="btn btn-primary btn-sm" id="cat-conflict-confirm-${catId}">Confirm</button>
     `;
     document.getElementById(`cat-conflict-confirm-${catId}`).addEventListener('click', async () => {
