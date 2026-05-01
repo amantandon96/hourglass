@@ -111,29 +111,29 @@ async function renderOverview() {
   if (window._weeklyChart) window._weeklyChart.destroy();
   window._weeklyChart = new Chart(ctx, {
     type: 'bar',
-    data: { labels, datasets: datasets.length ? datasets : [{ label: 'No data', data: Array(7).fill(0), backgroundColor: '#1e293b', stack: 'stack' }] },
+    data: { labels, datasets: datasets.length ? datasets : [{ label: 'No data', data: Array(7).fill(0), backgroundColor: '#e2e8f0', stack: 'stack' }] },
     options: {
       color: '#94a3b8',
       plugins: {
         legend: {
           display: categories.length > 1,
-          labels: { color: '#94a3b8', boxWidth: 12, font: { size: 11 } },
+          labels: { color: '#64748b', boxWidth: 12, font: { size: 11 } },
         },
       },
       scales: {
         x: {
           stacked: true,
-          ticks: { color: '#64748b' },
-          grid: { color: '#1e293b' },
-          border: { color: '#334155' },
+          ticks: { color: '#94a3b8' },
+          grid: { color: '#f1f5f9' },
+          border: { color: '#e2e8f0' },
         },
         y: {
           stacked: true,
           beginAtZero: true,
-          title: { display: true, text: 'minutes', color: '#64748b' },
-          ticks: { color: '#64748b' },
-          grid: { color: '#1e293b' },
-          border: { color: '#334155' },
+          title: { display: true, text: 'minutes', color: '#94a3b8' },
+          ticks: { color: '#94a3b8' },
+          grid: { color: '#f1f5f9' },
+          border: { color: '#e2e8f0' },
         },
       },
     },
