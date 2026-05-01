@@ -118,3 +118,29 @@ header a {
   font-size: 12px;
   padding: 20px;
 }
+
+/* Category cards */
+.category-card {
+  padding: 10px 16px 8px;
+  border-bottom: 1px solid #1e293b;
+}
+
+.category-card:last-child {
+  border-bottom: none;
+}
+
+.category-name {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: #94a3b8;
+  margin-bottom: 6px;
+}
+
+.category-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: #94a3b8;
+  margin-top: 4px;
+}
