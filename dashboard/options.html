@@ -12,6 +12,7 @@
     <div class="nav-item active" data-section="overview">📊 Overview</div>
     <div class="nav-item" data-section="history">📅 History</div>
     <div class="nav-item" data-section="sites">🌐 Sites</div>
+    <div class="nav-item" data-section="categories">🗂 Categories</div>
     <div class="nav-item" data-section="settings">⚙️ Settings</div>
   </nav>
 
@@ -22,24 +23,24 @@
       <div class="stats-row">
         <div class="stat-card">
           <div class="value" id="stat-today">—</div>
-          <div class="label">leisure today</div>
+          <div class="label" id="stat-today-label">today</div>
         </div>
         <div class="stat-card">
           <div class="value" id="stat-week">—</div>
-          <div class="label">leisure this week</div>
+          <div class="label" id="stat-week-label">this week</div>
         </div>
         <div class="stat-card">
           <div class="value" id="stat-remaining">—</div>
-          <div class="label">budget remaining</div>
+          <div class="label" id="stat-remaining-label">budget left</div>
         </div>
       </div>
       <div class="chart-container">
-        <h3>Daily leisure time — last 7 days</h3>
+        <h3>Daily category time — last 7 days</h3>
         <canvas id="weekly-chart" height="80"></canvas>
       </div>
       <div class="site-table">
         <table>
-          <thead><tr><th>Site</th><th>Today</th></tr></thead>
+          <thead><tr><th>Site</th><th>Category</th><th>Today</th></tr></thead>
           <tbody id="overview-site-tbody"></tbody>
         </table>
       </div>
@@ -53,31 +54,45 @@
 
     <!-- Sites -->
     <section id="section-sites" class="section">
-      <h2>Leisure Sites</h2>
-      <div class="settings-form">
-        <h3>Add a domain</h3>
-        <div class="form-row">
-          <label>Domain (e.g. example.com)</label>
-          <input type="text" id="add-domain-input" placeholder="example.com">
-        </div>
-        <button class="btn btn-primary" id="add-domain-btn">Add</button>
-      </div>
+      <h2>All Sites</h2>
+      <p style="color:#94a3b8;font-size:13px;margin-bottom:16px">
+        All domains tracked this week. Assign them to categories in the Categories section.
+      </p>
       <div class="site-table">
         <table>
-          <thead><tr><th>Domain</th><th>This week</th><th></th></tr></thead>
+          <thead><tr><th>Domain</th><th>Category</th><th>This week</th></tr></thead>
           <tbody id="sites-tbody"></tbody>
         </table>
       </div>
+    </section>
+
+    <!-- Categories -->
+    <section id="section-categories" class="section">
+      <h2>Categories</h2>
+      <div class="settings-form" id="add-category-form">
+        <h3>Add a category</h3>
+        <div class="form-row">
+          <label>Name</label>
+          <input type="text" id="add-cat-name" placeholder="e.g. Social">
+        </div>
+        <div class="form-row">
+          <label>Daily budget (minutes)</label>
+          <input type="number" id="add-cat-budget" min="1" max="1440" placeholder="60">
+        </div>
+        <button class="btn btn-primary" id="add-cat-btn">Add Category</button>
+      </div>
+      <div id="categories-table-container"></div>
     </section>
 
     <!-- Settings -->
     <section id="section-settings" class="section">
       <h2>Settings</h2>
       <div class="settings-form">
-        <h3>Daily Leisure Budget</h3>
+        <h3>Notification Thresholds</h3>
+        <p style="color:#94a3b8;font-size:13px">Notify when a category budget reaches these percentages (comma-separated).</p>
         <div class="form-row">
-          <label>Budget (minutes per day)</label>
-          <input type="number" id="budget-input" min="1" max="1440">
+          <label>Thresholds (%)</label>
+          <input type="text" id="notify-at-input" placeholder="80, 100">
         </div>
         <button class="btn btn-primary" id="save-settings-btn">Save</button>
       </div>

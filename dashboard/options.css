@@ -216,3 +216,72 @@ body {
 }
 
 .toast.visible { opacity: 1; }
+
+/* Categories section */
+.cat-row {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  margin-bottom: 8px;
+  overflow: hidden;
+}
+
+.cat-row-header {
+  display: flex;
+  align-items: center;
+  padding: 10px 14px;
+  background: #f8fafc;
+  gap: 10px;
+}
+
+.cat-row-name {
+  font-weight: 600;
+  font-size: 14px;
+  flex: 1;
+}
+
+.cat-row-meta {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.cat-row-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.btn-sm {
+  padding: 3px 8px;
+  font-size: 11px;
+}
+
+.cat-domains {
+  padding: 10px 14px;
+  background: #f1f5f9;
+}
+
+.cat-domain-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 3px 0;
+  font-size: 13px;
+}
+
+.cat-add-domain-row {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.cat-add-domain-row input {
+  flex: 1;
+}
+
+.cat-conflict-msg {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #b45309;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
