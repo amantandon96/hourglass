@@ -79,3 +79,42 @@ export function nextMidnight() {
   d.setHours(24, 0, 0, 0);
   return d;
 }
+
+/**
+ * Returns the category object whose `domains` array includes `domain`, or null.
+ * @param {string} domain
+ * @param {Array<{id:string, name:string, budgetMinutes:number, domains:string[]}>} categories
+ */
+export function getCategoryForDomain(domain, categories) {
+  for (const cat of categories) {
+    if (cat.domains.includes(domain)) return cat;
+  }
+  return null;
+}
+
+/**
+ * Sums seconds for all domains that belong to `category`.
+ * @param {{ [domain: string]: number }} usage  — { domain: seconds }
+ * @param {{ domains: string[] }} category
+ * @returns {number}
+ */
+export function computeCategorySeconds(usage, category) {
+  const set = new Set(category.domains);
+  return Object.entries(usage).reduce((sum, [domain, seconds]) => {
+    return set.has(domain) ? sum + seconds : sum;
+  }, 0);
+}
+
+/**
+ * Returns { categoryId: seconds } for every category.
+ * @param {{ [domain: string]: number }} usage
+ * @param {Array<{id:string, domains:string[]}>} categories
+ * @returns {{ [categoryId: string]: number }}
+ */
+export function computeAllCategoryUsage(usage, categories) {
+  const result = {};
+  for (const cat of categories) {
+    result[cat.id] = computeCategorySeconds(usage, cat);
+  }
+  return result;
+}
