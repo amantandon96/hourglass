@@ -246,14 +246,40 @@ async function renderSites() {
   }
 
   const sorted = Object.entries(weekTotals).sort(([, a], [, b]) => b - a);
+  const catOptions = categories.map((c) => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('');
+  const assignSelect = (domain) => categories.length === 0 ? '' : `
+    <select class="history-cat-select" data-domain="${domain}" title="Assign to category">
+      <option value="">+ category</option>
+      ${catOptions}
+    </select>
+  `;
+
   const tbody = document.getElementById('sites-tbody');
   tbody.innerHTML = sorted.map(([domain, sec]) => {
     const cat = getCategoryForDomain(domain, categories);
     const catLabel = cat
       ? `<span class="leisure-badge">${escapeHtml(cat.name)}</span>`
-      : '<span style="color:#475569;font-size:11px">—</span>';
+      : assignSelect(domain) || '<span style="color:#475569;font-size:11px">—</span>';
     return `<tr><td>${domain}</td><td>${catLabel}</td><td>${formatDuration(sec)}</td></tr>`;
   }).join('') || '<tr><td colspan="3" style="color:#9ca3af;text-align:center;padding:16px;font-size:12px">No sites tracked this week.</td></tr>';
+
+  // Wire up category assign selects
+  tbody.querySelectorAll('.history-cat-select').forEach((sel) => {
+    sel.addEventListener('change', async () => {
+      const catId = sel.value;
+      if (!catId) return;
+      const domain = sel.dataset.domain;
+      const cat = settings.categories.find((c) => c.id === catId);
+      if (!cat) return;
+      for (const c of settings.categories) {
+        c.domains = c.domains.filter((d) => d !== domain);
+      }
+      cat.domains.push(domain);
+      await storage.saveSettings(settings);
+      showToast(`${domain} → ${cat.name}`);
+      await renderSites();
+    });
+  });
 }
 
 // ---------------------------------------------------------------------------
