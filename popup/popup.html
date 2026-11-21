@@ -4,17 +4,49 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Hourglass</title>
+  <script src="../shared/theme-init.js"></script>
+  <link rel="stylesheet" href="../shared/theme.css">
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-  <header>
-    <h1>HOURGLASS</h1>
-    <a id="dashboard-link" href="#">Full report →</a>
+  <header class="bar">
+    <div class="brand">
+      <img src="../icons/logo.svg" alt="" width="18" height="18">
+      <span class="wordmark">Hourglass</span>
+    </div>
+    <div class="bar-actions">
+      <button type="button" class="btn btn-ghost btn-sm btn-icon theme-toggle" id="theme-toggle"></button>
+      <button type="button" class="btn btn-ghost btn-sm" id="dashboard-link">
+        Dashboard
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17 17 7M7 7h10v10"/></svg>
+      </button>
+    </div>
   </header>
 
-  <div id="category-list"></div>
+  <main>
+    <section class="today" aria-labelledby="today-label">
+      <p class="today-date" id="today-label"></p>
+      <p class="today-line"><span class="today-total num" id="today-total">&nbsp;</span> <span class="today-caption">tracked today</span></p>
+    </section>
 
-  <div class="site-list" id="site-list"></div>
+    <section class="block" id="budgets" aria-label="Budgets" hidden>
+      <h2 class="block-title">Budgets</h2>
+      <ul class="budget-list" id="category-list"></ul>
+    </section>
+
+    <section class="block" id="sites" aria-label="Other sites" hidden>
+      <h2 class="block-title" id="sites-title">Other sites</h2>
+      <ul class="site-list" id="site-list"></ul>
+      <button type="button" class="more-link" id="more-link" hidden></button>
+    </section>
+
+    <section class="empty" id="empty" hidden></section>
+  </main>
+
+  <footer class="foot">
+    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+    Stored on this device only
+  </footer>
 
   <script type="module" src="popup.js"></script>
 </body>

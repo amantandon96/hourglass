@@ -93,6 +93,23 @@ export class IndexedDbAdapter {
     });
   }
 
+  /** Remove every usage record for one date. (saveUsageForDate only upserts, it never deletes.) */
+  async deleteUsageForDate(dateStr) {
+    const db = await this._db;
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('usage', 'readwrite');
+      const req = tx.objectStore('usage').index('date').openKeyCursor(IDBKeyRange.only(dateStr));
+      req.onsuccess = (e) => {
+        const cursor = e.target.result;
+        if (!cursor) return;
+        tx.objectStore('usage').delete(cursor.primaryKey);
+        cursor.continue();
+      };
+      tx.oncomplete = () => resolve();
+      tx.onerror = (e) => reject(e.target.error);
+    });
+  }
+
   async getUsageRange(startDateStr, endDateStr) {
     const db = await this._db;
     return new Promise((resolve, reject) => {
