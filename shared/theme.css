@@ -22,7 +22,7 @@
 }
 
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
 
   /* Neutrals: near-zero chroma, a hair toward cool so ink reads crisp. */
   --canvas:     oklch(0.992 0.002 250);
@@ -69,24 +69,23 @@
   --dur: 180ms;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --canvas:     oklch(0.205 0.004 250);
-    --panel:      oklch(0.178 0.004 250);
-    --raised:     oklch(0.235 0.005 250);
-    --line:       oklch(0.315 0.006 250);
-    --line-soft:  oklch(0.265 0.005 250);
-    --ink:        oklch(0.955 0.003 250);
-    --ink-2:      oklch(0.80 0.006 250);
-    --ink-3:      oklch(0.685 0.007 250);
-    --hover:      oklch(0.955 0.003 250 / 0.06);
-    --selected:   oklch(0.955 0.003 250 / 0.09);
-    --focus:      oklch(0.72 0.14 255);
-    --warning:    oklch(0.80 0.13 75);
-    --critical:   oklch(0.72 0.16 25);
-    --critical-soft: oklch(0.72 0.16 25 / 0.12);
-    --track:      oklch(0.955 0.003 250 / 0.10);
-  }
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --canvas:     oklch(0.205 0.004 250);
+  --panel:      oklch(0.178 0.004 250);
+  --raised:     oklch(0.235 0.005 250);
+  --line:       oklch(0.315 0.006 250);
+  --line-soft:  oklch(0.265 0.005 250);
+  --ink:        oklch(0.955 0.003 250);
+  --ink-2:      oklch(0.80 0.006 250);
+  --ink-3:      oklch(0.685 0.007 250);
+  --hover:      oklch(0.955 0.003 250 / 0.06);
+  --selected:   oklch(0.955 0.003 250 / 0.09);
+  --focus:      oklch(0.72 0.14 255);
+  --warning:    oklch(0.80 0.13 75);
+  --critical:   oklch(0.72 0.16 25);
+  --critical-soft: oklch(0.72 0.16 25 / 0.12);
+  --track:      oklch(0.955 0.003 250 / 0.10);
 }
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -126,7 +125,7 @@ h1, h2, h3 { text-wrap: balance; font-weight: 600; }
 /* Category color: elements carry --cat-light/--cat-dark inline (palette.js);
    .has-cat resolves the right one for the current theme into --cat. */
 .has-cat { --cat: var(--cat-light); }
-@media (prefers-color-scheme: dark) { .has-cat { --cat: var(--cat-dark); } }
+[data-theme="dark"] .has-cat { --cat: var(--cat-dark); }
 
 /* Category identity: a small dot. */
 .cat-dot {
@@ -206,6 +205,46 @@ h1, h2, h3 { text-wrap: balance; font-weight: 600; }
   clip: rect(0 0 0 0);
   white-space: nowrap;
 }
+
+/* ---- Theme toggle -------------------------------------------------------- */
+/* Both icons are in the markup; the theme decides which shows. The icon names
+   the theme you switch TO, the usual convention for a two-state toggle. */
+.theme-toggle .icon-sun { display: none; }
+[data-theme="dark"] .theme-toggle .icon-sun { display: block; }
+[data-theme="dark"] .theme-toggle .icon-moon { display: none; }
+
+/* Brief color crossfade while switching themes (theme-init.js adds the class). */
+.theme-switching, .theme-switching *, .theme-switching *::before, .theme-switching *::after {
+  transition: background-color 220ms var(--ease-out), border-color 220ms var(--ease-out), color 220ms var(--ease-out), fill 220ms var(--ease-out) !important;
+}
+
+/* Segmented control (Settings > Appearance) */
+.segmented {
+  display: inline-flex;
+  padding: 2px;
+  gap: 2px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+.segmented label {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 var(--s3);
+  border-radius: var(--radius-sm);
+  color: var(--ink-2);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color var(--dur) var(--ease-out), color var(--dur) var(--ease-out);
+}
+.segmented label:hover { color: var(--ink); }
+.segmented input { position: absolute; opacity: 0; pointer-events: none; }
+.segmented label:has(input:checked) { background: var(--raised); color: var(--ink); box-shadow: 0 0 0 1px var(--line), 0 1px 2px oklch(0 0 0 / 0.06); }
+.segmented label:has(input:focus-visible) { outline: 2px solid var(--focus); outline-offset: 1px; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition-duration: 0ms !important; animation-duration: 0ms !important; }

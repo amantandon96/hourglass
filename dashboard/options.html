@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Hourglass</title>
+  <script src="../shared/theme-init.js"></script>
   <link rel="icon" href="../icons/icon48.png">
   <link rel="stylesheet" href="../shared/theme.css">
   <link rel="stylesheet" href="options.css">
@@ -11,9 +12,12 @@
 </head>
 <body>
   <nav id="sidebar" aria-label="Sections">
-    <div class="brand">
-      <img src="../icons/logo.svg" alt="" width="22" height="22">
-      <span class="wordmark">Hourglass</span>
+    <div class="brand-row">
+      <div class="brand">
+        <img src="../icons/logo.svg" alt="" width="22" height="22">
+        <span class="wordmark">Hourglass</span>
+      </div>
+      <button type="button" class="btn btn-ghost btn-sm btn-icon theme-toggle" id="theme-toggle"></button>
     </div>
 
     <ul class="nav">
@@ -122,6 +126,20 @@
       <header class="page-head">
         <h1 id="h-settings">Settings</h1>
       </header>
+
+      <div class="setting">
+        <div class="setting-text">
+          <h2 id="appearance-label">Appearance</h2>
+          <p>System follows your computer's light or dark setting.</p>
+        </div>
+        <div class="setting-control">
+          <div class="segmented" role="radiogroup" aria-labelledby="appearance-label" id="appearance">
+            <label><input type="radio" name="appearance" value="system">System</label>
+            <label><input type="radio" name="appearance" value="light">Light</label>
+            <label><input type="radio" name="appearance" value="dark">Dark</label>
+          </div>
+        </div>
+      </div>
 
       <form class="setting" id="settings-form" novalidate>
         <div class="setting-text">

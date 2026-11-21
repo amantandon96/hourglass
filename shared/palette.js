@@ -45,5 +45,5 @@ export function nextFreeSlot(categories) {
 }
 
 export function isDarkMode() {
-  return window.matchMedia('(prefers-color-scheme: dark)').matches;
+  return document.documentElement.dataset.theme === 'dark';
 }

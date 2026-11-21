@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Hourglass</title>
+  <script src="../shared/theme-init.js"></script>
   <link rel="stylesheet" href="../shared/theme.css">
   <link rel="stylesheet" href="popup.css">
 </head>
@@ -13,10 +14,13 @@
       <img src="../icons/logo.svg" alt="" width="18" height="18">
       <span class="wordmark">Hourglass</span>
     </div>
-    <button type="button" class="btn btn-ghost btn-sm" id="dashboard-link">
-      Dashboard
-      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17 17 7M7 7h10v10"/></svg>
-    </button>
+    <div class="bar-actions">
+      <button type="button" class="btn btn-ghost btn-sm btn-icon theme-toggle" id="theme-toggle"></button>
+      <button type="button" class="btn btn-ghost btn-sm" id="dashboard-link">
+        Dashboard
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17 17 7M7 7h10v10"/></svg>
+      </button>
+    </div>
   </header>
 
   <main>

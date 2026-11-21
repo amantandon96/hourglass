@@ -15,6 +15,7 @@ body {
 }
 
 .brand { display: flex; align-items: center; gap: var(--s2); }
+.bar-actions { display: flex; align-items: center; gap: 2px; }
 .brand img { border-radius: 4px; box-shadow: 0 0 0 1px var(--line); }
 
 .wordmark {

@@ -9,6 +9,7 @@ import {
 } from '../shared/tracker.js';
 import { categoryStyle } from '../shared/palette.js';
 import { icon, escapeHtml } from '../shared/icons.js';
+import { wireThemeToggle, THEME_TOGGLE_HTML } from '../shared/theme-toggle.js';
 
 // Chrome caps popups at 600px tall; show fewer sites when there are more budgets.
 const maxSites = (categoryCount) => Math.max(3, 7 - categoryCount);
@@ -116,5 +117,9 @@ async function render() {
 }
 
 document.getElementById('dashboard-link').addEventListener('click', () => openDashboard());
+
+const themeToggle = document.getElementById('theme-toggle');
+themeToggle.innerHTML = THEME_TOGGLE_HTML;
+wireThemeToggle(themeToggle);
 
 render();

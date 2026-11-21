@@ -15,6 +15,7 @@ import {
 } from '../shared/palette.js';
 import { icon, escapeHtml } from '../shared/icons.js';
 import { DEFAULT_SETTINGS } from '../shared/constants.js';
+import { wireThemeToggle, THEME_TOGGLE_HTML } from '../shared/theme-toggle.js';
 
 let settings = null;
 let weeklyUsage = null; // { 'YYYY-MM-DD': { domain: seconds } }
@@ -570,8 +571,22 @@ document.getElementById('add-category-form').addEventListener('submit', async (e
 // Settings
 // ---------------------------------------------------------------------------
 function renderSettings() {
+  syncAppearance();
   document.getElementById('notify-at-input').value = (settings.notifyAt ?? [80, 100]).join(', ');
 }
+
+// Appearance: System / Light / Dark
+const appearance = document.getElementById('appearance');
+function syncAppearance() {
+  const pref = window.hourglassTheme.getPreference();
+  appearance.querySelectorAll('input').forEach((r) => { r.checked = r.value === pref; });
+}
+appearance.addEventListener('change', (e) => window.hourglassTheme.set(e.target.value));
+document.addEventListener('themechange', syncAppearance);
+
+const themeToggle = document.getElementById('theme-toggle');
+themeToggle.innerHTML = THEME_TOGGLE_HTML;
+wireThemeToggle(themeToggle);
 
 document.getElementById('settings-form').addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -616,8 +631,8 @@ async function init() {
   await Promise.all([loadData(), document.fonts.ready]);
   await renderAll();
   renderSettings();
-  // Chart colors come from theme tokens; redraw when the OS theme flips.
-  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', renderChart);
+  // Chart colors come from theme tokens; redraw whenever the theme changes.
+  document.addEventListener('themechange', renderChart);
 }
 
 init();
