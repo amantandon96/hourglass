@@ -235,11 +235,11 @@ async function fireNotification(cat, threshold, usage, pct, catSeconds) {
   const is100 = threshold >= 100;
 
   const title = is100
-    ? `${cat.name} budget exhausted`
-    : `Heads up — ${remainMin}m of ${cat.name} budget left`;
+    ? `${cat.name} budget used up`
+    : `${remainMin}m of ${cat.name} left today`;
 
   const message = is100
-    ? `${topOffenders || 'no sites tracked'}. Snooze or stop?`
+    ? topOffenders ? `Most time on ${topOffenders}.` : `You have reached today's ${cat.name} budget.`
     : `You've used ${pct}% of your ${cat.budgetMinutes}m ${cat.name} budget.`;
 
   const notifId = `threshold-${cat.id}-${threshold}`;

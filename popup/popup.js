@@ -1,14 +1,5 @@
 // popup/popup.js
 import { storage } from '../shared/storage/index.js';
-
-function escapeHtml(str) {
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
 import {
   getCategoryForDomain,
   computeCategorySeconds,
@@ -16,80 +7,114 @@ import {
   formatDuration,
   localDateStr,
 } from '../shared/tracker.js';
+import { categoryStyle } from '../shared/palette.js';
+import { icon, escapeHtml } from '../shared/icons.js';
 
-// Fixed colour palette for categories (assigned by index)
-const CATEGORY_COLORS = [
-  '#818cf8', // indigo
-  '#34d399', // emerald
-  '#fb923c', // orange
-  '#f472b6', // pink
-  '#60a5fa', // blue
-  '#a78bfa', // violet
-  '#facc15', // yellow
-];
+// Chrome caps popups at 600px tall; show fewer sites when there are more budgets.
+const maxSites = (categoryCount) => Math.max(3, 7 - categoryCount);
+
+function openDashboard(section) {
+  if (section) {
+    chrome.tabs.create({ url: chrome.runtime.getURL(`dashboard/options.html#${section}`) });
+    window.close();
+  } else {
+    chrome.runtime.openOptionsPage();
+  }
+}
+
+/** Threshold (in %) at which a budget is shown as running low. */
+function warnAt(settings) {
+  const below100 = (settings?.notifyAt ?? []).filter((v) => v < 100);
+  return below100.length ? Math.min(...below100) : 80;
+}
+
+function budgetItem({ cat, sec, pct }, categories, warnPct) {
+  const budgetSec = cat.budgetMinutes * 60;
+  const over = sec > budgetSec;
+  const state = over ? 'is-over' : pct >= warnPct ? 'is-close' : '';
+  const stateText = over
+    ? `${icon('alert')}<span>Over by ${formatDuration(sec - budgetSec)}</span>`
+    : `<span>${formatDuration(budgetSec - sec)} left</span>`;
+
+  return `
+    <li class="budget has-cat ${state}" style="${categoryStyle(cat, categories)}">
+      <div class="budget-head">
+        <span class="budget-name"><span class="cat-dot"></span><span>${escapeHtml(cat.name)}</span></span>
+        <span class="budget-amount num"><strong>${formatDuration(sec)}</strong> of ${formatDuration(budgetSec)}</span>
+      </div>
+      <div class="budget-track">
+        <div class="meter" role="progressbar" aria-label="${escapeHtml(cat.name)} budget used"
+             aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.min(pct, 100)}">
+          <div class="meter-fill" style="width:${Math.min(pct, 100)}%"></div>
+        </div>
+        <p class="budget-state num">${stateText}</p>
+      </div>
+    </li>`;
+}
 
 async function render() {
   const settings = await storage.getSettings();
-  const today = localDateStr();
-  const usage = await storage.getUsageForDate(today);
-
+  const usage = await storage.getUsageForDate(localDateStr());
   const categories = settings?.categories ?? [];
-  const categoryList = document.getElementById('category-list');
-  const siteList = document.getElementById('site-list');
 
-  if (categories.length === 0) {
-    categoryList.innerHTML =
-      '<div class="empty" style="padding:12px 16px;color:#9ca3af;font-size:12px">No categories yet — set them up in the dashboard.</div>';
-  } else {
-    // Sort by % used descending (most urgent first)
-    const sorted = categories
-      .map((cat, i) => {
+  document.getElementById('today-label').textContent = new Intl.DateTimeFormat(undefined, {
+    weekday: 'long', day: 'numeric', month: 'long',
+  }).format(new Date());
+
+  const totalSec = Object.values(usage).reduce((a, b) => a + b, 0);
+  document.getElementById('today-total').textContent = totalSec < 60 ? '0m' : formatDuration(totalSec);
+
+  // Budgets, most-used first
+  const budgets = document.getElementById('budgets');
+  if (categories.length) {
+    const warnPct = warnAt(settings);
+    const rows = categories
+      .map((cat) => {
         const sec = computeCategorySeconds(usage, cat);
-        const pct = budgetPercent(sec, cat.budgetMinutes);
-        return { cat, sec, pct, color: CATEGORY_COLORS[i % CATEGORY_COLORS.length] };
+        return { cat, sec, pct: budgetPercent(sec, cat.budgetMinutes) };
       })
       .sort((a, b) => b.pct - a.pct);
-
-    categoryList.innerHTML = sorted.map(({ cat, sec, pct, color }) => {
-      const budgetSec = cat.budgetMinutes * 60;
-      const remainSec = Math.max(0, budgetSec - sec);
-      const fillPct = Math.min(pct, 100);
-      return `
-        <div class="category-card">
-          <div class="category-name">${escapeHtml(cat.name).toUpperCase()}</div>
-          <div class="bar-wrap">
-            <div class="bar-fill" style="width:${fillPct}%;background:${color}"></div>
-          </div>
-          <div class="category-meta">
-            <span>${formatDuration(sec)} used of ${cat.budgetMinutes}m</span>
-            <span class="remaining">${formatDuration(remainSec)} left</span>
-          </div>
-        </div>
-      `;
-    }).join('');
+    document.getElementById('category-list').innerHTML =
+      rows.map((r) => budgetItem(r, categories, warnPct)).join('');
+    budgets.hidden = false;
   }
 
-  // Uncategorized domains — sorted by time desc, no budget bar
+  // Sites not in any category
   const uncategorized = Object.entries(usage)
     .filter(([domain]) => getCategoryForDomain(domain, categories) === null)
     .sort(([, a], [, b]) => b - a);
 
-  if (uncategorized.length === 0 && categories.length === 0) {
-    siteList.innerHTML = '<div class="empty">No activity tracked today.</div>';
-  } else {
-    siteList.innerHTML = uncategorized.map(([domain, seconds]) => `
-      <div class="site-card">
-        <span class="domain">${domain}</span>
-        <span class="time">${formatDuration(seconds)}</span>
-      </div>
-    `).join('');
+  if (uncategorized.length) {
+    document.getElementById('sites-title').textContent = categories.length ? 'Other sites' : 'Sites today';
+    document.getElementById('site-list').innerHTML = uncategorized.slice(0, maxSites(categories.length)).map(([domain, sec]) => `
+      <li class="site-row">
+        <span class="site-domain">${escapeHtml(domain)}</span>
+        <span class="site-time num">${formatDuration(sec)}</span>
+      </li>`).join('');
+    const extra = uncategorized.length - maxSites(categories.length);
+    const more = document.getElementById('more-link');
+    if (extra > 0) {
+      more.textContent = `${extra} more ${extra === 1 ? 'site' : 'sites'} in the dashboard`;
+      more.hidden = false;
+      more.addEventListener('click', () => openDashboard('overview'));
+    }
+    document.getElementById('sites').hidden = false;
+  }
+
+  // Empty and first-run guidance
+  const empty = document.getElementById('empty');
+  if (!categories.length) {
+    empty.innerHTML = `
+      <p>Group sites into categories like Social or News to give each one a daily time budget.</p>
+      <button type="button" class="btn btn-sm" id="create-cat">${icon('plus')}Create a category</button>`;
+    empty.hidden = false;
+    document.getElementById('create-cat').addEventListener('click', () => openDashboard('categories'));
+  } else if (totalSec === 0) {
+    empty.innerHTML = '<p>Nothing tracked yet today. Time counts while a tab is active and the window is focused.</p>';
+    empty.hidden = false;
   }
 }
 
-// Dashboard link
-document.getElementById('dashboard-link').addEventListener('click', (e) => {
-  e.preventDefault();
-  chrome.runtime.openOptionsPage();
-});
+document.getElementById('dashboard-link').addEventListener('click', () => openDashboard());
 
 render();

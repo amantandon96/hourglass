@@ -5,7 +5,7 @@ A Chrome extension that shows where your browser time goes: which sites, which c
 ## Private by design
 
 - **Everything stays on your device.** Usage data lives in the browser's local storage and IndexedDB.
-- **Nothing is sent anywhere.** The extension's Content Security Policy sets `connect-src 'none'`, so its pages can't make network requests. There's no analytics, no account, and no server.
+- **Nothing is sent anywhere.** The extension's Content Security Policy sets `connect-src 'none'`, which blocks fetch, XHR, WebSocket and beacon connections to any server. There's no analytics, no account, and no server.
 
 ## Features
 
@@ -32,3 +32,9 @@ Project layout:
 - `dashboard/`: options page / full dashboard
 - `shared/`: tracker logic, constants, storage adapters
 - `docs/`: design specs and implementation plans
+
+## Credits
+
+- [Archivo](https://github.com/Omnibus-Type/Archivo) by Omnibus-Type, bundled under the SIL Open Font License (`shared/fonts/OFL.txt`)
+- Icon paths adapted from [Lucide](https://lucide.dev) (ISC)
+- [Chart.js](https://www.chartjs.org) (MIT)

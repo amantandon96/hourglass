@@ -1,526 +1,623 @@
 // dashboard/options.js
 import { storage } from '../shared/storage/index.js';
-
-function escapeHtml(str) {
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
 import {
   getCategoryForDomain,
   computeCategorySeconds,
   formatDuration,
-  budgetPercent,
   localDateStr,
   daysAgo,
 } from '../shared/tracker.js';
+import {
+  categoryStyle,
+  categoryColors,
+  nextFreeSlot,
+  isDarkMode,
+} from '../shared/palette.js';
+import { icon, escapeHtml } from '../shared/icons.js';
+import { DEFAULT_SETTINGS } from '../shared/constants.js';
 
 let settings = null;
-let weeklyUsage = null; // { dateStr: { domain: seconds } }
+let weeklyUsage = null; // { 'YYYY-MM-DD': { domain: seconds } }
+let weeklyChart = null;
 
-const CATEGORY_COLORS = [
-  '#818cf8', '#34d399', '#fb923c', '#f472b6', '#60a5fa', '#a78bfa', '#facc15',
-];
+const SECTIONS = ['overview', 'history', 'sites', 'categories', 'settings'];
 
 // ---------------------------------------------------------------------------
-// Toast helper
+// Helpers
 // ---------------------------------------------------------------------------
+let toastTimer;
 function showToast(msg) {
   const el = document.getElementById('toast');
   el.textContent = msg;
   el.classList.add('visible');
-  setTimeout(() => el.classList.remove('visible'), 2500);
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('visible'), 2600);
 }
 
-// ---------------------------------------------------------------------------
-// Navigation
-// ---------------------------------------------------------------------------
-document.querySelectorAll('.nav-item').forEach((item) => {
-  item.addEventListener('click', () => {
-    document.querySelectorAll('.nav-item').forEach((n) => n.classList.remove('active'));
-    document.querySelectorAll('.section').forEach((s) => s.classList.remove('active'));
-    item.classList.add('active');
-    const sec = document.getElementById(`section-${item.dataset.section}`);
-    if (sec) sec.classList.add('active');
-  });
+function parseLocalDate(dateStr) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
+
+const dayLong = new Intl.DateTimeFormat(undefined, { weekday: 'long', day: 'numeric', month: 'long' });
+const dayShort = new Intl.DateTimeFormat(undefined, { weekday: 'short', day: 'numeric' });
+
+function dayLabel(dateStr) {
+  if (dateStr === localDateStr()) return 'Today';
+  if (dateStr === daysAgo(1)) return 'Yesterday';
+  return dayLong.format(parseLocalDate(dateStr));
+}
+
+function sumValues(obj) {
+  return Object.values(obj).reduce((a, b) => a + b, 0);
+}
+
+function categoryChip(cat) {
+  const categories = settings.categories;
+  return `<span class="cat-chip has-cat" style="${categoryStyle(cat, categories)}"><span class="cat-dot"></span>${escapeHtml(cat.name)}</span>`;
+}
+
+function assignSelect(domain) {
+  const categories = settings.categories ?? [];
+  if (!categories.length) return '<span class="no-cat">None</span>';
+  return `
+    <select class="select select-sm assign-select" data-domain="${escapeHtml(domain)}" aria-label="Assign ${escapeHtml(domain)} to a category">
+      <option value="">Assign category</option>
+      ${categories.map((c) => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)}</option>`).join('')}
+    </select>`;
+}
+
+async function assignDomain(domain, catId) {
+  const cat = settings.categories.find((c) => c.id === catId);
+  if (!cat) return;
+  for (const c of settings.categories) c.domains = c.domains.filter((d) => d !== domain);
+  cat.domains.push(domain);
+  await storage.saveSettings(settings);
+  showToast(`${domain} added to ${cat.name}`);
+  await renderAll();
+}
+
+// One delegated listener covers every assign dropdown on the page.
+document.getElementById('main').addEventListener('change', (e) => {
+  const sel = e.target.closest('.assign-select');
+  if (sel && sel.value) assignDomain(sel.dataset.domain, sel.value);
 });
 
 // ---------------------------------------------------------------------------
-// Data loading
+// Navigation (hash-based, so reloads and popup links land on a section)
+// ---------------------------------------------------------------------------
+function showSection(name) {
+  if (!SECTIONS.includes(name)) name = 'overview';
+  for (const s of SECTIONS) {
+    document.getElementById(`section-${s}`).hidden = s !== name;
+  }
+  document.querySelectorAll('.nav-item').forEach((item) => {
+    if (item.dataset.section === name) item.setAttribute('aria-current', 'page');
+    else item.removeAttribute('aria-current');
+  });
+  if (name === 'overview' && weeklyChart) weeklyChart.resize();
+}
+
+document.querySelectorAll('.nav-item').forEach((item) => {
+  item.addEventListener('click', () => {
+    history.replaceState(null, '', `#${item.dataset.section}`);
+    showSection(item.dataset.section);
+  });
+});
+window.addEventListener('hashchange', () => showSection(location.hash.slice(1)));
+
+// ---------------------------------------------------------------------------
+// Data
 // ---------------------------------------------------------------------------
 async function loadData() {
-  settings = await storage.getSettings();
-  const today = localDateStr();
-  const sevenDaysAgo = daysAgo(6);
-  weeklyUsage = await storage.getUsageRange(sevenDaysAgo, today);
+  settings = (await storage.getSettings()) ?? structuredClone(DEFAULT_SETTINGS);
+  settings.categories ??= [];
+  weeklyUsage = await storage.getUsageRange(daysAgo(6), localDateStr());
 }
 
 // ---------------------------------------------------------------------------
-// Overview section
+// Overview
 // ---------------------------------------------------------------------------
-async function renderOverview() {
-  const today = localDateStr();
-  const todayUsage = weeklyUsage[today] ?? {};
-  const categories = settings.categories ?? [];
+function cssVar(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
 
-  // Stacked weekly bar chart
-  const labels = [];
-  for (let i = 6; i >= 0; i--) {
-    labels.push(daysAgo(i).slice(5)); // MM-DD
-  }
+function renderChart() {
+  const categories = settings.categories;
+  const dates = Array.from({ length: 7 }, (_, i) => daysAgo(6 - i));
+  const mode = isDarkMode() ? 'dark' : 'light';
 
-  const datasets = categories.map((cat, idx) => ({
+  const minutesFor = (fn) => dates.map((d) => Math.round(fn(weeklyUsage[d] ?? {}) / 60));
+
+  const datasets = categories.map((cat) => ({
     label: cat.name,
-    data: Array.from({ length: 7 }, (_, i) => {
-      const d = daysAgo(6 - i);
-      const dayUsage = weeklyUsage[d] ?? {};
-      return Math.round(computeCategorySeconds(dayUsage, cat) / 60);
-    }),
-    backgroundColor: CATEGORY_COLORS[idx % CATEGORY_COLORS.length],
-    borderRadius: idx === categories.length - 1 ? 4 : 0,
-    stack: 'stack',
+    data: minutesFor((u) => computeCategorySeconds(u, cat)),
+    backgroundColor: categoryColors(cat, categories)[mode],
   }));
 
-  const ctx = document.getElementById('weekly-chart').getContext('2d');
-  if (window._weeklyChart) window._weeklyChart.destroy();
-  window._weeklyChart = new Chart(ctx, {
+  const uncategorized = minutesFor((u) =>
+    Object.entries(u)
+      .filter(([d]) => !getCategoryForDomain(d, categories))
+      .reduce((s, [, v]) => s + v, 0));
+  if (uncategorized.some((v) => v > 0) || !datasets.length) {
+    datasets.push({
+      label: 'Uncategorized',
+      data: uncategorized,
+      backgroundColor: mode === 'dark' ? '#4a4e55' : '#c9ccd1',
+    });
+  }
+
+  const surface = cssVar('--canvas');
+  const ink2 = cssVar('--ink-2');
+  const ink3 = cssVar('--ink-3');
+  const grid = cssVar('--line-soft');
+
+  for (const ds of datasets) {
+    Object.assign(ds, {
+      stack: 'day',
+      // 2px surface-colored gap between stacked segments
+      borderColor: surface,
+      borderWidth: { top: 2, right: 0, bottom: 0, left: 0 },
+      borderSkipped: 'start',
+      // round only the topmost visible segment of each bar
+      borderRadius: (ctx) => {
+        const later = ctx.chart.data.datasets.slice(ctx.datasetIndex + 1);
+        const isTop = later.every((d, j) =>
+          !d.data[ctx.dataIndex] || !ctx.chart.isDatasetVisible(ctx.datasetIndex + 1 + j));
+        return isTop ? { topLeft: 4, topRight: 4 } : 0;
+      },
+      maxBarThickness: 44,
+    });
+  }
+
+  const fmtMin = (m) => formatDuration(m * 60);
+  // Tick spacing in whole, readable units (15m, 30m, 1h, 2h...) for about 4 gridlines.
+  const niceStep = (sets) => {
+    const max = Math.max(1, ...dates.map((_, i) => sets.reduce((s, d) => s + d.data[i], 0)));
+    return [5, 10, 15, 30, 60, 120, 180, 240, 360].find((s) => max / s <= 5) ?? 480;
+  };
+
+  Chart.defaults.font.family = cssVar('--font');
+  Chart.defaults.font.size = 12;
+
+  if (weeklyChart) weeklyChart.destroy();
+  weeklyChart = new Chart(document.getElementById('weekly-chart'), {
     type: 'bar',
-    data: { labels, datasets: datasets.length ? datasets : [{ label: 'No data', data: Array(7).fill(0), backgroundColor: '#e2e8f0', stack: 'stack' }] },
+    data: { labels: dates.map((d) => (d === localDateStr() ? 'Today' : dayShort.format(parseLocalDate(d)))), datasets },
     options: {
-      color: '#94a3b8',
+      maintainAspectRatio: false,
+      animation: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? false : { duration: 300 },
+      interaction: { mode: 'index', intersect: false },
       plugins: {
         legend: {
-          display: categories.length > 1,
-          labels: { color: '#64748b', boxWidth: 12, font: { size: 11 } },
+          position: 'top',
+          align: 'start',
+          labels: { color: ink2, usePointStyle: true, pointStyle: 'circle', boxWidth: 8, boxHeight: 8, padding: 16 },
+        },
+        tooltip: {
+          backgroundColor: cssVar('--ink'),
+          titleColor: surface,
+          bodyColor: surface,
+          footerColor: surface,
+          padding: 10,
+          cornerRadius: 6,
+          boxWidth: 8,
+          boxHeight: 8,
+          usePointStyle: true,
+          filter: (item) => item.raw > 0,
+          callbacks: {
+            label: (item) => ` ${item.dataset.label}: ${fmtMin(item.raw)}`,
+            footer: (items) => `Total: ${fmtMin(items.reduce((s, i) => s + i.raw, 0))}`,
+          },
         },
       },
       scales: {
         x: {
           stacked: true,
-          ticks: { color: '#94a3b8' },
-          grid: { color: '#f1f5f9' },
-          border: { color: '#e2e8f0' },
+          ticks: { color: ink3 },
+          grid: { display: false },
+          border: { color: cssVar('--line') },
         },
         y: {
           stacked: true,
           beginAtZero: true,
-          title: { display: true, text: 'minutes', color: '#94a3b8' },
-          ticks: { color: '#94a3b8' },
-          grid: { color: '#f1f5f9' },
-          border: { color: '#e2e8f0' },
+          ticks: { color: ink3, stepSize: niceStep(datasets), callback: (v) => (v === 0 ? '0' : fmtMin(v)) },
+          grid: { color: grid },
+          border: { display: false },
         },
       },
     },
   });
+}
 
-  // Today's site table with Category column
-  const sorted = Object.entries(todayUsage).sort(([, a], [, b]) => b - a);
-  const tbody = document.getElementById('overview-site-tbody');
-  tbody.innerHTML = sorted.map(([domain, sec]) => {
+function renderOverview() {
+  const today = localDateStr();
+  const todayUsage = weeklyUsage[today] ?? {};
+  const categories = settings.categories;
+
+  document.getElementById('overview-date').textContent = dayLong.format(new Date());
+
+  const todaySec = sumValues(todayUsage);
+  const weekSec = Object.values(weeklyUsage).reduce((s, u) => s + sumValues(u), 0);
+  const activeDays = Object.values(weeklyUsage).filter((u) => sumValues(u) > 0).length;
+  const avgSec = activeDays ? weekSec / activeDays : 0;
+
+  document.getElementById('overview-summary').innerHTML = `
+    <div><dt>Today</dt><dd>${formatDuration(todaySec)}</dd></div>
+    <div><dt>Last 7 days</dt><dd>${formatDuration(weekSec)}</dd></div>
+    <div><dt>Daily average</dt><dd>${formatDuration(avgSec)}</dd></div>`;
+
+  renderChart();
+
+  const rows = Object.entries(todayUsage).sort(([, a], [, b]) => b - a);
+  document.getElementById('overview-site-tbody').innerHTML = rows.map(([domain, sec]) => {
     const cat = getCategoryForDomain(domain, categories);
-    const catIdx = cat ? categories.indexOf(cat) : -1;
-    const catLabel = cat
-      ? `<span class="leisure-badge" style="background:${CATEGORY_COLORS[catIdx % CATEGORY_COLORS.length]}22;color:${CATEGORY_COLORS[catIdx % CATEGORY_COLORS.length]};border:1px solid ${CATEGORY_COLORS[catIdx % CATEGORY_COLORS.length]}44">${escapeHtml(cat.name)}</span>`
-      : '<span style="color:#475569;font-size:11px">—</span>';
-    return `<tr><td>${domain}</td><td>${catLabel}</td><td>${formatDuration(sec)}</td></tr>`;
-  }).join('') || '<tr><td colspan="3" style="color:#9ca3af;text-align:center;padding:16px">No data today</td></tr>';
+    return `<tr>
+      <td class="t-domain">${escapeHtml(domain)}</td>
+      <td>${cat ? categoryChip(cat) : assignSelect(domain)}</td>
+      <td class="t-num">${formatDuration(sec)}</td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="3" class="t-empty">Nothing tracked yet today. Browse as usual and sites will appear here.</td></tr>';
 }
 
 // ---------------------------------------------------------------------------
-// History section
+// History
 // ---------------------------------------------------------------------------
-async function renderHistory() {
+function renderHistory() {
   const container = document.getElementById('history-list');
-  const categories = settings.categories ?? [];
+  const categories = settings.categories;
+  const days = Object.keys(weeklyUsage).filter((d) => sumValues(weeklyUsage[d]) > 0).sort().reverse();
 
-  const days = Object.keys(weeklyUsage).sort().reverse();
-  if (days.length === 0) {
-    container.innerHTML = '<p style="color:#9ca3af">No history yet.</p>';
+  if (!days.length) {
+    container.innerHTML = '<p class="list-empty">No history yet. Each day you browse gets its own breakdown here.</p>';
     return;
   }
-
-  // Build a <select> snippet for assigning a domain to a category
-  const catOptions = categories.map((c) => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('');
-  const assignSelect = (domain) => categories.length === 0 ? '' : `
-    <select class="history-cat-select" data-domain="${domain}" title="Assign to category">
-      <option value="">+ category</option>
-      ${catOptions}
-    </select>
-  `;
 
   container.innerHTML = days.map((dateStr) => {
     const usage = weeklyUsage[dateStr];
-
-    // Group domains by category
-    const grouped = {};
+    const groups = new Map();
     for (const [domain, sec] of Object.entries(usage)) {
       const cat = getCategoryForDomain(domain, categories);
-      const key = cat ? cat.id : '_uncategorized';
-      if (!grouped[key]) {
-        grouped[key] = { label: cat ? escapeHtml(cat.name) : 'Uncategorized', entries: [], isUncategorized: !cat };
-      }
-      grouped[key].entries.push([domain, sec]);
+      const key = cat ? cat.id : '';
+      if (!groups.has(key)) groups.set(key, { cat, entries: [] });
+      groups.get(key).entries.push([domain, sec]);
     }
 
-    const totalSec = Object.values(usage).reduce((a, b) => a + b, 0);
+    // Categories in their configured order, uncategorized last
+    const ordered = [...groups.values()].sort((a, b) => {
+      if (!a.cat) return 1;
+      if (!b.cat) return -1;
+      return categories.indexOf(a.cat) - categories.indexOf(b.cat);
+    });
 
-    const groupHtml = Object.values(grouped).map(({ label, entries, isUncategorized }) => {
-      const sortedEntries = entries.sort(([, a], [, b]) => b - a);
+    const body = ordered.map(({ cat, entries }) => {
       const groupSec = entries.reduce((s, [, v]) => s + v, 0);
+      const label = cat
+        ? `<span class="group-label has-cat" style="${categoryStyle(cat, categories)}"><span class="cat-dot"></span>${escapeHtml(cat.name)}</span>`
+        : '<span class="group-label">Uncategorized</span>';
       return `
-        <tr class="history-cat-header">
-          <td style="padding:4px 16px;font-size:11px;color:#94a3b8;font-weight:600">${label}</td>
-          <td style="padding:4px 16px;font-size:11px;color:#94a3b8">${formatDuration(groupSec)}</td>
-        </tr>
-        ${sortedEntries.map(([d, s]) => `
+        <tr class="group-row"><td>${label}</td><td class="t-num">${formatDuration(groupSec)}</td></tr>
+        ${entries.sort(([, a], [, b]) => b - a).map(([d, s]) => `
           <tr>
-            <td style="padding:3px 24px;color:#6b7280;font-size:12px">
-              ${d}
-              ${isUncategorized ? assignSelect(d) : ''}
-            </td>
-            <td style="padding:3px 16px;font-size:12px">${formatDuration(s)}</td>
-          </tr>
-        `).join('')}
-      `;
+            <td><div class="site-cell"><span>${escapeHtml(d)}</span>${cat ? '' : assignSelect(d)}</div></td>
+            <td class="t-num">${formatDuration(s)}</td>
+          </tr>`).join('')}`;
     }).join('');
 
     return `
-      <div class="site-table" style="margin-bottom:12px">
-        <table>
-          <thead><tr>
-            <th>${dateStr}</th>
-            <th style="color:#64748b">${formatDuration(totalSec)} total</th>
-          </tr></thead>
-          <tbody>${groupHtml || '<tr><td colspan="2" style="color:#9ca3af;padding:10px 16px;font-size:12px">No data</td></tr>'}</tbody>
-        </table>
-      </div>
-    `;
+      <section class="day" aria-label="${escapeHtml(dayLabel(dateStr))}">
+        <div class="panel-head">
+          <h2>${escapeHtml(dayLabel(dateStr))}</h2>
+          <span class="panel-meta num">${formatDuration(sumValues(usage))} total</span>
+        </div>
+        <table class="data"><tbody>${body}</tbody></table>
+      </section>`;
   }).join('');
-
-  // Wire up category assign selects
-  container.querySelectorAll('.history-cat-select').forEach((sel) => {
-    sel.addEventListener('change', async () => {
-      const catId = sel.value;
-      if (!catId) return;
-      const domain = sel.dataset.domain;
-      const cat = settings.categories.find((c) => c.id === catId);
-      if (!cat) return;
-      // Remove from any existing category first
-      for (const c of settings.categories) {
-        c.domains = c.domains.filter((d) => d !== domain);
-      }
-      cat.domains.push(domain);
-      await storage.saveSettings(settings);
-      showToast(`${domain} → ${cat.name}`);
-      await renderHistory();
-    });
-  });
 }
 
 // ---------------------------------------------------------------------------
-// Sites section
+// Sites
 // ---------------------------------------------------------------------------
-async function renderSites() {
-  const today = localDateStr();
-  const sevenDaysAgo = daysAgo(6);
-  const range = await storage.getUsageRange(sevenDaysAgo, today);
-  const categories = settings.categories ?? [];
-
-  const weekTotals = {};
-  for (const usage of Object.values(range)) {
-    for (const [domain, sec] of Object.entries(usage)) {
-      weekTotals[domain] = (weekTotals[domain] ?? 0) + sec;
-    }
+function renderSites() {
+  const categories = settings.categories;
+  const totals = {};
+  for (const usage of Object.values(weeklyUsage)) {
+    for (const [domain, sec] of Object.entries(usage)) totals[domain] = (totals[domain] ?? 0) + sec;
   }
 
-  const sorted = Object.entries(weekTotals).sort(([, a], [, b]) => b - a);
-  const catOptions = categories.map((c) => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('');
-  const assignSelect = (domain) => categories.length === 0 ? '' : `
-    <select class="history-cat-select" data-domain="${domain}" title="Assign to category">
-      <option value="">+ category</option>
-      ${catOptions}
-    </select>
-  `;
-
-  const tbody = document.getElementById('sites-tbody');
-  tbody.innerHTML = sorted.map(([domain, sec]) => {
+  const rows = Object.entries(totals).sort(([, a], [, b]) => b - a);
+  document.getElementById('sites-tbody').innerHTML = rows.map(([domain, sec]) => {
     const cat = getCategoryForDomain(domain, categories);
-    const catLabel = cat
-      ? `<span class="leisure-badge">${escapeHtml(cat.name)}</span>`
-      : assignSelect(domain) || '<span style="color:#475569;font-size:11px">—</span>';
-    return `<tr><td>${domain}</td><td>${catLabel}</td><td>${formatDuration(sec)}</td></tr>`;
-  }).join('') || '<tr><td colspan="3" style="color:#9ca3af;text-align:center;padding:16px;font-size:12px">No sites tracked this week.</td></tr>';
-
-  // Wire up category assign selects
-  tbody.querySelectorAll('.history-cat-select').forEach((sel) => {
-    sel.addEventListener('change', async () => {
-      const catId = sel.value;
-      if (!catId) return;
-      const domain = sel.dataset.domain;
-      const cat = settings.categories.find((c) => c.id === catId);
-      if (!cat) return;
-      for (const c of settings.categories) {
-        c.domains = c.domains.filter((d) => d !== domain);
-      }
-      cat.domains.push(domain);
-      await storage.saveSettings(settings);
-      showToast(`${domain} → ${cat.name}`);
-      await renderSites();
-    });
-  });
+    return `<tr>
+      <td class="t-domain">${escapeHtml(domain)}</td>
+      <td>${cat ? categoryChip(cat) : assignSelect(domain)}</td>
+      <td class="t-num">${formatDuration(sec)}</td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="3" class="t-empty">No sites tracked in the last 7 days.</td></tr>';
 }
 
 // ---------------------------------------------------------------------------
-// Categories section
+// Categories
 // ---------------------------------------------------------------------------
-async function renderCategories() {
-  const container = document.getElementById('categories-table-container');
-  const categories = settings.categories ?? [];
+const openCategories = new Set();
 
-  if (categories.length === 0) {
-    container.innerHTML = '<p style="color:#9ca3af;padding:8px 0">No categories yet. Add one above.</p>';
+function budgetText(min) {
+  return `${formatDuration(min * 60)} a day`;
+}
+
+function renderCategories() {
+  const list = document.getElementById('categories-table-container');
+  const categories = settings.categories;
+
+  if (!categories.length) {
+    list.innerHTML = '<li class="list-empty">No categories yet. Add one above, then assign sites to it from here or from the Sites page.</li>';
     return;
   }
 
-  container.innerHTML = categories.map((cat) => `
-    <div class="cat-row" id="cat-row-${cat.id}">
-      <div class="cat-row-header">
-        <span class="cat-row-name">${escapeHtml(cat.name)}</span>
-        <span class="cat-row-meta">
-          <span id="cat-budget-display-${cat.id}">${cat.budgetMinutes}m/day</span>
-          <button class="btn btn-sm cat-edit-budget-btn" data-cat="${cat.id}" title="Edit budget">✎</button>
-          <span class="cat-budget-edit" id="cat-budget-edit-${cat.id}" style="display:none">
-            <input type="number" class="cat-budget-input" id="cat-budget-input-${cat.id}" value="${cat.budgetMinutes}" min="1" max="1440" style="width:60px">
-            <button class="btn btn-primary btn-sm cat-budget-save-btn" data-cat="${cat.id}">Save</button>
-            <button class="btn btn-sm cat-budget-cancel-btn" data-cat="${cat.id}">Cancel</button>
-          </span>
-          · ${cat.domains.length} sites
-        </span>
-        <div class="cat-row-actions">
-          <button class="btn btn-sm cat-toggle-btn" data-cat="${cat.id}">▼ Domains</button>
-          <button class="btn btn-danger btn-sm cat-delete-btn" data-cat="${cat.id}">✕</button>
+  list.innerHTML = categories.map((cat) => {
+    const id = escapeHtml(cat.id);
+    const open = openCategories.has(cat.id);
+    const n = cat.domains.length;
+    return `
+      <li class="cat-item" data-cat="${id}">
+        <div class="cat-row">
+          <div class="cat-title has-cat" style="${categoryStyle(cat, categories)}">
+            <span class="cat-dot"></span><strong>${escapeHtml(cat.name)}</strong>
+          </div>
+          <span class="cat-meta num" data-role="budget-view">${budgetText(cat.budgetMinutes)}</span>
+          <form class="budget-edit" data-role="budget-edit" hidden>
+            <label class="visually-hidden" for="budget-${id}">Minutes per day for ${escapeHtml(cat.name)}</label>
+            <input class="input num" type="number" id="budget-${id}" value="${cat.budgetMinutes}" min="1" max="1440">
+            <button type="submit" class="btn btn-primary btn-sm">Save</button>
+            <button type="button" class="btn btn-ghost btn-sm" data-action="cancel-budget">Cancel</button>
+          </form>
+          <div class="cat-actions">
+            <button type="button" class="btn btn-ghost btn-sm" data-action="edit-budget">Edit budget</button>
+            <button type="button" class="btn btn-ghost btn-sm disclosure" data-action="toggle"
+                    aria-expanded="${open}" aria-controls="cat-body-${id}">
+              ${n} ${n === 1 ? 'site' : 'sites'}${icon('chevron')}
+            </button>
+            <button type="button" class="btn btn-ghost btn-danger btn-sm btn-icon" data-action="delete"
+                    aria-label="Delete ${escapeHtml(cat.name)}" title="Delete category">${icon('x')}</button>
+          </div>
         </div>
-      </div>
-      <div class="cat-domains" id="cat-domains-${cat.id}" style="display:none">
-        <div class="cat-domain-list" id="cat-domain-list-${cat.id}">
-          ${cat.domains.map((d) => `
-            <div class="cat-domain-row">
-              <span>${d}</span>
-              <button class="btn btn-danger btn-sm cat-remove-domain-btn" data-cat="${cat.id}" data-domain="${d}">✕</button>
-            </div>
-          `).join('') || '<div style="color:#9ca3af;font-size:12px;padding:4px 0">No domains.</div>'}
+        <div class="cat-body" id="cat-body-${id}" ${open ? '' : 'hidden'}>
+          ${n ? `<ul class="domain-list">${cat.domains.map((d) => `
+            <li class="domain-row">
+              <span>${escapeHtml(d)}</span>
+              <button type="button" class="btn btn-ghost btn-danger btn-sm btn-icon" data-action="remove-domain"
+                      data-domain="${escapeHtml(d)}" aria-label="Remove ${escapeHtml(d)}" title="Remove site">${icon('x')}</button>
+            </li>`).join('')}</ul>`
+            : '<p class="domain-empty">No sites in this category yet.</p>'}
+          <form class="add-domain" data-role="add-domain">
+            <label class="visually-hidden" for="add-domain-${id}">Add a site to ${escapeHtml(cat.name)}</label>
+            <input class="input" type="text" id="add-domain-${id}" placeholder="example.com" autocomplete="off">
+            <button type="submit" class="btn btn-sm">Add site</button>
+          </form>
+          <div class="conflict" data-role="conflict" hidden></div>
         </div>
-        <div class="cat-add-domain-row">
-          <input type="text" class="cat-add-domain-input" id="cat-add-domain-input-${cat.id}" placeholder="example.com">
-          <button class="btn btn-primary btn-sm cat-add-domain-btn" data-cat="${cat.id}">Add</button>
-        </div>
-        <div class="cat-conflict-msg" id="cat-conflict-${cat.id}" style="display:none"></div>
-      </div>
-    </div>
-  `).join('');
+      </li>`;
+  }).join('');
+}
 
-  // Wire up toggle buttons
-  container.querySelectorAll('.cat-toggle-btn').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const domainsEl = document.getElementById(`cat-domains-${btn.dataset.cat}`);
-      const isHidden = domainsEl.style.display === 'none';
-      domainsEl.style.display = isHidden ? 'block' : 'none';
-      btn.textContent = isHidden ? '▲ Domains' : '▼ Domains';
-    });
-  });
+function setBudgetEditing(item, editing) {
+  item.querySelector('[data-role="budget-view"]').hidden = editing;
+  item.querySelector('[data-action="edit-budget"]').hidden = editing;
+  item.querySelector('[data-role="budget-edit"]').hidden = !editing;
+  if (editing) item.querySelector('[data-role="budget-edit"] input').select();
+}
 
-  // Wire up budget edit buttons
-  container.querySelectorAll('.cat-edit-budget-btn').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      document.getElementById(`cat-budget-display-${btn.dataset.cat}`).style.display = 'none';
-      btn.style.display = 'none';
-      document.getElementById(`cat-budget-edit-${btn.dataset.cat}`).style.display = 'inline-flex';
-    });
-  });
+const catList = document.getElementById('categories-table-container');
 
-  container.querySelectorAll('.cat-budget-cancel-btn').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      document.getElementById(`cat-budget-display-${btn.dataset.cat}`).style.display = '';
-      document.querySelector(`.cat-edit-budget-btn[data-cat="${btn.dataset.cat}"]`).style.display = '';
-      document.getElementById(`cat-budget-edit-${btn.dataset.cat}`).style.display = 'none';
-    });
-  });
+catList.addEventListener('click', async (e) => {
+  const btn = e.target.closest('[data-action]');
+  if (!btn) return;
+  const item = btn.closest('.cat-item');
+  const cat = settings.categories.find((c) => c.id === item.dataset.cat);
+  if (!cat) return;
 
-  container.querySelectorAll('.cat-budget-save-btn').forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      const catId = btn.dataset.cat;
-      const cat = settings.categories.find((c) => c.id === catId);
-      if (!cat) return;
-      const newBudget = parseInt(document.getElementById(`cat-budget-input-${catId}`).value, 10);
-      if (!newBudget || newBudget < 1) return;
-      if (newBudget === cat.budgetMinutes) {
-        // No change — just collapse
-        document.getElementById(`cat-budget-display-${catId}`).style.display = '';
-        document.querySelector(`.cat-edit-budget-btn[data-cat="${catId}"]`).style.display = '';
-        document.getElementById(`cat-budget-edit-${catId}`).style.display = 'none';
-        return;
-      }
-      const nudge = newBudget > cat.budgetMinutes
-        ? `Increasing ${escapeHtml(cat.name)} budget from ${cat.budgetMinutes}m to ${newBudget}m. Are you sure you want to give yourself more time?`
-        : `Decreasing ${escapeHtml(cat.name)} budget from ${cat.budgetMinutes}m to ${newBudget}m. Staying disciplined — confirm?`;
-      if (!confirm(nudge)) return;
-      cat.budgetMinutes = newBudget;
-      await storage.saveSettings(settings);
-      showToast(`${cat.name} budget updated to ${newBudget}m`);
-      await renderCategories();
-    });
-  });
-
-  // Wire up delete category buttons
-  container.querySelectorAll('.cat-delete-btn').forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      const cat = settings.categories.find((c) => c.id === btn.dataset.cat);
-      if (!cat) return;
-      const msg = cat.domains.length > 0
-        ? `Delete ${cat.name}? Its ${cat.domains.length} domain(s) will become uncategorized.`
+  switch (btn.dataset.action) {
+    case 'toggle': {
+      const body = item.querySelector('.cat-body');
+      body.hidden = !body.hidden;
+      btn.setAttribute('aria-expanded', String(!body.hidden));
+      if (body.hidden) openCategories.delete(cat.id);
+      else openCategories.add(cat.id);
+      break;
+    }
+    case 'edit-budget':
+      setBudgetEditing(item, true);
+      break;
+    case 'cancel-budget':
+      setBudgetEditing(item, false);
+      break;
+    case 'delete': {
+      const msg = cat.domains.length
+        ? `Delete ${cat.name}? Its ${cat.domains.length} ${cat.domains.length === 1 ? 'site becomes' : 'sites become'} uncategorized. Tracked time is kept.`
         : `Delete ${cat.name}?`;
       if (!confirm(msg)) return;
-      settings.categories = settings.categories.filter((c) => c.id !== btn.dataset.cat);
+      settings.categories = settings.categories.filter((c) => c !== cat);
+      openCategories.delete(cat.id);
       await storage.saveSettings(settings);
       showToast(`Deleted ${cat.name}`);
-      await renderCategories();
-    });
-  });
-
-  // Wire up remove domain buttons
-  container.querySelectorAll('.cat-remove-domain-btn').forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      const cat = settings.categories.find((c) => c.id === btn.dataset.cat);
-      if (!cat) return;
+      await renderAll();
+      break;
+    }
+    case 'remove-domain':
       cat.domains = cat.domains.filter((d) => d !== btn.dataset.domain);
       await storage.saveSettings(settings);
-      showToast(`Removed ${btn.dataset.domain}`);
-      await renderCategories();
-    });
-  });
+      showToast(`Removed ${btn.dataset.domain} from ${cat.name}`);
+      await renderAll();
+      break;
+  }
+});
 
-  // Wire up add domain buttons
-  container.querySelectorAll('.cat-add-domain-btn').forEach((btn) => {
-    btn.addEventListener('click', () => addDomainToCategory(btn.dataset.cat));
-  });
-  container.querySelectorAll('.cat-add-domain-input').forEach((input) => {
-    input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') addDomainToCategory(input.id.replace('cat-add-domain-input-', ''));
-    });
-  });
-}
+catList.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && e.target.closest('[data-role="budget-edit"]')) {
+    setBudgetEditing(e.target.closest('.cat-item'), false);
+  }
+});
 
-async function addDomainToCategory(catId) {
-  const input = document.getElementById(`cat-add-domain-input-${catId}`);
-  const conflictEl = document.getElementById(`cat-conflict-${catId}`);
-  const domain = input.value.trim().replace(/^www\./, '').toLowerCase();
+catList.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const form = e.target;
+  const item = form.closest('.cat-item');
+  const cat = settings.categories.find((c) => c.id === item.dataset.cat);
+  if (!cat) return;
+
+  if (form.dataset.role === 'budget-edit') {
+    const input = form.querySelector('input');
+    const minutes = parseInt(input.value, 10);
+    if (!minutes || minutes < 1 || minutes > 1440) {
+      input.setAttribute('aria-invalid', 'true');
+      return;
+    }
+    if (minutes > cat.budgetMinutes &&
+        !confirm(`Raise ${cat.name} from ${budgetText(cat.budgetMinutes)} to ${budgetText(minutes)}?`)) return;
+    cat.budgetMinutes = minutes;
+    await storage.saveSettings(settings);
+    showToast(`${cat.name}: ${budgetText(minutes)}`);
+    await renderAll();
+  }
+
+  if (form.dataset.role === 'add-domain') await addDomainToCategory(cat, item);
+});
+
+async function addDomainToCategory(cat, item) {
+  const input = item.querySelector('[data-role="add-domain"] input');
+  const conflict = item.querySelector('[data-role="conflict"]');
+  const domain = input.value.trim().toLowerCase()
+    .replace(/^https?:\/\//, '').replace(/\/.*$/, '').replace(/^www\./, '');
+  conflict.hidden = true;
   if (!domain) return;
 
-  conflictEl.style.display = 'none';
-
-  // Check if domain already belongs to another category
-  const existingCat = settings.categories.find(
-    (c) => c.id !== catId && c.domains.includes(domain)
-  );
-
-  if (existingCat) {
-    conflictEl.style.display = 'flex';
-    conflictEl.innerHTML = `
-      <span>"${escapeHtml(domain)}" is in ${escapeHtml(existingCat.name)} — move it here?</span>
-      <button class="btn btn-primary btn-sm" id="cat-conflict-confirm-${catId}">Confirm</button>
-    `;
-    document.getElementById(`cat-conflict-confirm-${catId}`).addEventListener('click', async () => {
-      existingCat.domains = existingCat.domains.filter((d) => d !== domain);
-      const thisCat = settings.categories.find((c) => c.id === catId);
-      if (thisCat && !thisCat.domains.includes(domain)) thisCat.domains.push(domain);
+  const other = settings.categories.find((c) => c !== cat && c.domains.includes(domain));
+  if (other) {
+    conflict.innerHTML = `
+      <span>${escapeHtml(domain)} is already in ${escapeHtml(other.name)}.</span>
+      <button type="button" class="btn btn-sm">Move to ${escapeHtml(cat.name)}</button>`;
+    conflict.hidden = false;
+    conflict.querySelector('button').addEventListener('click', async () => {
+      other.domains = other.domains.filter((d) => d !== domain);
+      cat.domains.push(domain);
       await storage.saveSettings(settings);
-      input.value = '';
-      conflictEl.style.display = 'none';
-      showToast(`Moved ${domain} to ${thisCat.name}`);
-      await renderCategories();
+      showToast(`Moved ${domain} to ${cat.name}`);
+      await renderAll();
     });
     return;
   }
 
-  const thisCat = settings.categories.find((c) => c.id === catId);
-  if (!thisCat) return;
-  if (!thisCat.domains.includes(domain)) {
-    thisCat.domains.push(domain);
+  if (!cat.domains.includes(domain)) {
+    cat.domains.push(domain);
     await storage.saveSettings(settings);
-    showToast(`Added ${domain}`);
+    showToast(`Added ${domain} to ${cat.name}`);
   }
-  input.value = '';
-  await renderCategories();
+  await renderAll();
+  document.getElementById(`add-domain-${cat.id}`)?.focus();
 }
 
-document.getElementById('add-cat-btn').addEventListener('click', async () => {
+document.getElementById('add-category-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
   const nameInput = document.getElementById('add-cat-name');
   const budgetInput = document.getElementById('add-cat-budget');
+  const error = document.getElementById('add-cat-error');
   const name = nameInput.value.trim();
   const budget = parseInt(budgetInput.value, 10);
-  if (!name) return;
-  if (!budget || budget < 1) return;
 
-  // Generate stable slug id
-  const id = name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-  if (!id) return;
+  nameInput.removeAttribute('aria-invalid');
+  budgetInput.removeAttribute('aria-invalid');
+  error.textContent = '';
 
-  if (settings.categories.find((c) => c.id === id)) {
-    showToast(`Category "${name}" already exists`);
+  if (!name) {
+    nameInput.setAttribute('aria-invalid', 'true');
+    error.textContent = 'Give the category a name.';
+    nameInput.focus();
+    return;
+  }
+  if (!budget || budget < 1 || budget > 1440) {
+    budgetInput.setAttribute('aria-invalid', 'true');
+    error.textContent = 'Enter a daily budget between 1 and 1440 minutes.';
+    budgetInput.focus();
+    return;
+  }
+  if (settings.categories.some((c) => c.name.toLowerCase() === name.toLowerCase())) {
+    nameInput.setAttribute('aria-invalid', 'true');
+    error.textContent = `There's already a category called ${name}.`;
+    nameInput.focus();
     return;
   }
 
-  settings.categories.push({ id, name, budgetMinutes: budget, domains: [] });
+  const slug = name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+  const id = slug && !settings.categories.some((c) => c.id === slug) ? slug : `cat-${Date.now()}`;
+
+  settings.categories.push({
+    id,
+    name,
+    budgetMinutes: budget,
+    domains: [],
+    colorSlot: nextFreeSlot(settings.categories),
+  });
   await storage.saveSettings(settings);
   nameInput.value = '';
   budgetInput.value = '';
-  showToast(`Added category ${name}`);
-  await renderCategories();
+  openCategories.add(id);
+  showToast(`Added ${name}`);
+  await renderAll();
+  document.getElementById(`add-domain-${id}`)?.focus();
 });
 
 // ---------------------------------------------------------------------------
-// Settings section
+// Settings
 // ---------------------------------------------------------------------------
-async function renderSettings() {
+function renderSettings() {
   document.getElementById('notify-at-input').value = (settings.notifyAt ?? [80, 100]).join(', ');
 }
 
-document.getElementById('save-settings-btn').addEventListener('click', async () => {
-  const raw = document.getElementById('notify-at-input').value;
-  const notifyAt = raw
-    .split(',')
-    .map((v) => parseInt(v.trim(), 10))
-    .filter((v) => !isNaN(v) && v > 0 && v <= 100);
-  if (notifyAt.length === 0) return;
+document.getElementById('settings-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const input = document.getElementById('notify-at-input');
+  const error = document.getElementById('notify-error');
+  const values = input.value.split(',').map((v) => v.trim()).filter(Boolean);
+  const notifyAt = [...new Set(values.map((v) => parseInt(v, 10)))].sort((a, b) => a - b);
+
+  if (!values.length || notifyAt.some((v) => isNaN(v) || v < 1 || v > 100)) {
+    input.setAttribute('aria-invalid', 'true');
+    error.textContent = 'Use whole numbers from 1 to 100, separated by commas.';
+    return;
+  }
+  input.removeAttribute('aria-invalid');
+  error.textContent = '';
   settings.notifyAt = notifyAt;
+  input.value = notifyAt.join(', ');
   await storage.saveSettings(settings);
-  showToast('Settings saved.');
+  showToast('Notification thresholds saved');
 });
 
 document.getElementById('reset-today-btn').addEventListener('click', async () => {
-  if (!confirm("Reset all tracking data for today? This cannot be undone.")) return;
-  if (!confirm("Are you sure? Today's data will be permanently deleted.")) return;
-  await storage.saveUsageForDate(localDateStr(), {});
+  if (!confirm("Delete everything tracked today? Earlier days are kept. This can't be undone.")) return;
+  await storage.deleteUsageForDate(localDateStr());
   await loadData();
-  await renderOverview();
-  showToast("Today's data reset.");
+  await renderAll();
+  showToast("Today's data was reset");
 });
 
 // ---------------------------------------------------------------------------
 // Boot
 // ---------------------------------------------------------------------------
+async function renderAll() {
+  renderOverview();
+  renderHistory();
+  renderSites();
+  renderCategories();
+}
+
 async function init() {
-  await loadData();
-  await Promise.all([
-    renderOverview(),
-    renderHistory(),
-    renderSites(),
-    renderCategories(),
-    renderSettings(),
-  ]);
+  showSection(location.hash.slice(1));
+  await Promise.all([loadData(), document.fonts.ready]);
+  await renderAll();
+  renderSettings();
+  // Chart colors come from theme tokens; redraw when the OS theme flips.
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', renderChart);
 }
 
 init();
