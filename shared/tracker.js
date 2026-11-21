@@ -62,6 +62,29 @@ export function localDateStr(date = new Date()) {
 }
 
 /**
+ * Split an elapsed interval into whole seconds grouped by local calendar date.
+ */
+export function splitElapsedByLocalDate(startMs, endMs) {
+  if (endMs <= startMs) return {};
+
+  const result = {};
+  let cursor = startMs;
+  while (cursor < endMs) {
+    const current = new Date(cursor);
+    const midnight = new Date(current);
+    midnight.setHours(24, 0, 0, 0);
+    const segmentEnd = Math.min(endMs, midnight.getTime());
+    const seconds = Math.floor((segmentEnd - cursor) / 1000);
+    if (seconds > 0) {
+      const dateStr = localDateStr(current);
+      result[dateStr] = (result[dateStr] ?? 0) + seconds;
+    }
+    cursor = segmentEnd;
+  }
+  return result;
+}
+
+/**
  * Return the date string N days before the given date.
  */
 export function daysAgo(n, from = new Date()) {

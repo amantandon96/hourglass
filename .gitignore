@@ -1,1 +1,4 @@
 .superpowers/
+.idea/
+.playwright-cli/
+node_modules/

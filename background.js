@@ -1,13 +1,14 @@
 // background.js
 import { storage } from './shared/storage/index.js';
 import { DEFAULT_SETTINGS, FLUSH_ALARM_NAME, MIDNIGHT_ALARM_NAME, SNOOZE_MINUTES, PRUNE_DAYS } from './shared/constants.js';
-import { extractDomain, budgetPercent, formatDuration, localDateStr, daysAgo, nextMidnight, computeAllCategoryUsage } from './shared/tracker.js';
+import { extractDomain, budgetPercent, formatDuration, localDateStr, daysAgo, nextMidnight, computeAllCategoryUsage, splitElapsedByLocalDate } from './shared/tracker.js';
 
 // ---------------------------------------------------------------------------
 // In-memory session state
 // ---------------------------------------------------------------------------
 let activeDomain = null;       // currently tracked domain (string | null)
 let activeStart = null;        // epoch ms when tracking started (number | null)
+let activeDate = null;         // local date when the current interval started
 let settings = null;           // loaded settings object
 let snoozedUntil = {};         // { [categoryId]: epoch ms | null }
 let dismissedToday = [];       // array of categoryIds dismissed today
@@ -88,6 +89,9 @@ async function init() {
   // Restore session if present
   const session = await storage.getSession();
   if (session) {
+    activeDomain = typeof session.activeDomain === 'string' ? session.activeDomain : null;
+    activeStart = Number.isFinite(session.activeStart) ? session.activeStart : null;
+    activeDate = typeof session.activeDate === 'string' ? session.activeDate : null;
     snoozedUntil = session.snoozedUntil ?? {};
     dismissedToday = session.dismissedToday ?? [];
     notifiedThresholds = session.notifiedThresholds ?? {};
@@ -99,6 +103,7 @@ async function init() {
 
   // Set up alarms
   await setupAlarms();
+  await reconcileActiveTab();
 }
 
 async function setupAlarms() {
@@ -124,32 +129,62 @@ async function startTracking(url) {
   if (domain) {
     activeDomain = domain;
     activeStart = Date.now();
+    activeDate = localDateStr();
   } else {
     activeDomain = null;
     activeStart = null;
+    activeDate = null;
   }
+  await persistSession();
 }
 
 async function stopTracking() {
   await flushCurrent();
   activeDomain = null;
   activeStart = null;
+  activeDate = null;
+  await persistSession();
 }
 
 async function flushCurrent() {
-  if (!activeDomain || !activeStart) return;
-  const elapsed = Math.floor((Date.now() - activeStart) / 1000);
-  if (elapsed <= 0) return;
+  if (!activeDomain || !Number.isFinite(activeStart)) return;
 
-  const dateStr = localDateStr();
-  const usage = await storage.getUsageForDate(dateStr);
-  usage[activeDomain] = (usage[activeDomain] ?? 0) + elapsed;
-  await storage.saveUsageForDate(dateStr, usage);
+  const domain = activeDomain;
+  const startMs = activeStart;
+  const nowMs = Date.now();
+  const elapsedByDate = splitElapsedByLocalDate(startMs, nowMs);
+  if (Object.keys(elapsedByDate).length === 0) return;
+
+  let latestUsage = null;
+  for (const [dateStr, elapsed] of Object.entries(elapsedByDate)) {
+    const usage = await storage.getUsageForDate(dateStr);
+    usage[domain] = (usage[domain] ?? 0) + elapsed;
+    await storage.saveUsageForDate(dateStr, usage);
+    latestUsage = usage;
+  }
 
   // Reset start time so next flush doesn't double-count
-  activeStart = Date.now();
+  activeStart = nowMs;
+  activeDate = localDateStr(new Date(nowMs));
+  await persistSession();
 
-  await checkBudget(usage);
+  await checkBudget(latestUsage);
+}
+
+async function reconcileActiveTab() {
+  try {
+    const focusedWindow = await chrome.windows.getLastFocused({ windowTypes: ['normal'] });
+    if (!focusedWindow?.focused || focusedWindow.state === 'minimized') {
+      await stopTracking();
+      return;
+    }
+
+    const [activeTab] = await chrome.tabs.query({ active: true, windowId: focusedWindow.id });
+    if (activeTab?.url) await startTracking(activeTab.url);
+    else await stopTracking();
+  } catch {
+    // Chrome may close the focused window during startup reconciliation.
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -274,6 +309,7 @@ async function midnightReset() {
   await flushCurrent();
   activeDomain = null;
   activeStart = null;
+  activeDate = null;
   snoozedUntil = {};
   dismissedToday = [];
   notifiedThresholds = {};
@@ -288,7 +324,7 @@ async function midnightReset() {
 chrome.tabs.onActivated.addListener(async ({ tabId }) => {
   try {
     const tab = await chrome.tabs.get(tabId);
-    if (tab.url) await startTracking(tab.url);
+    await startTracking(tab?.url);
   } catch {
     // Tab may have been closed already
   }
@@ -298,7 +334,7 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   if (changeInfo.status !== 'complete') return;
   try {
     const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (activeTab?.id === tabId) await startTracking(tab.url);
+    if (activeTab?.id === tabId) await startTracking(activeTab.url);
   } catch {
     // Ignore
   }
@@ -310,7 +346,7 @@ chrome.windows.onFocusChanged.addListener(async (windowId) => {
   } else {
     try {
       const [activeTab] = await chrome.tabs.query({ active: true, windowId });
-      if (activeTab?.url) await startTracking(activeTab.url);
+      await startTracking(activeTab?.url);
     } catch {
       // Ignore
     }
@@ -322,6 +358,9 @@ chrome.windows.onFocusChanged.addListener(async (windowId) => {
 // ---------------------------------------------------------------------------
 async function persistSession() {
   await storage.saveSession({
+    activeDomain,
+    activeStart,
+    activeDate,
     snoozedUntil,
     dismissedToday,
     notifiedThresholds,
