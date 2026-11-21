@@ -1,4 +1,4 @@
-# Panopticon — Chrome Extension Design Spec
+# Hourglass — Chrome Extension Design Spec
 
 **Date:** 2026-05-01  
 **Status:** Approved
@@ -7,7 +7,7 @@
 
 ## Overview
 
-Panopticon is a Chrome extension that tracks time spent on **all** websites, enforces a configurable daily leisure budget (counted only against designated leisure domains), and provides a productivity audit dashboard. All data is stored locally — no backend, no sync.
+Hourglass is a Chrome extension that tracks time spent on **all** websites, enforces a configurable daily leisure budget (counted only against designated leisure domains), and provides a productivity audit dashboard. All data is stored locally — no backend, no sync.
 
 **Core goals:**
 1. Self-control: alert the user when they exceed their daily leisure budget
@@ -88,6 +88,7 @@ Stored in `chrome.storage.local`:
   "session": {
     "activeDomain": "youtube.com",
     "activeStart": 1746123456789,
+    "activeDate": "2026-05-01",
     "snoozedUntil": null,
     "dismissedToday": false,
     "notifiedThresholds": [80]
@@ -98,7 +99,8 @@ Stored in `chrome.storage.local`:
 **Notes:**
 - Usage values are in **seconds**
 - **All** domains are tracked; `leisureDomains` controls which ones count toward the budget and trigger notifications
-- `session` is ephemeral runtime state; reconstructed on service worker restart
+- `session` stores notification state and the active tracking interval so it
+  can be restored after a service worker restart
 - `usage` keys are ISO date strings in local time (`YYYY-MM-DD`)
 - Data older than 90 days is pruned on startup to keep storage bounded
 
@@ -141,14 +143,14 @@ The active adapter is instantiated once in `shared/storage/index.js` and exporte
 | Default domain list | ~20 common leisure sites, shipped in extension; user can add/remove |
 | New site detection | Not automatic — user adds sites manually from Settings > Sites |
 | Storage pruning | Usage entries older than 90 days deleted on service worker startup |
-| Service worker restart | Session reconstructed: `activeDomain` and `activeStart` reset, snooze/dismiss state cleared |
+| Service worker restart | Active session is restored, flushed, and reconciled with the currently focused tab |
 
 ---
 
 ## File Structure
 
 ```
-panopticon/
+hourglass/
 ├── manifest.json
 ├── background.js
 ├── popup/

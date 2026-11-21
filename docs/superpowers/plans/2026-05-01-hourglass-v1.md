@@ -1,4 +1,4 @@
-# Panopticon Chrome Extension — Implementation Plan
+# Hourglass Chrome Extension — Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -13,7 +13,7 @@
 ## File Map
 
 ```
-panopticon/
+hourglass/
 ├── manifest.json
 ├── background.js                         # service worker entry point
 ├── popup/
@@ -79,7 +79,7 @@ export const DEFAULT_SETTINGS = {
 ```json
 {
   "manifest_version": 3,
-  "name": "Panopticon",
+  "name": "Hourglass",
   "version": "0.1.0",
   "description": "Track your browsing time and enforce a daily leisure budget.",
   "permissions": [
@@ -604,7 +604,7 @@ init();
 
 1. Open `chrome://extensions`
 2. Enable Developer Mode
-3. Click "Load unpacked" → select the `panopticon/` folder
+3. Click "Load unpacked" → select the `hourglass/` folder
 4. Open a few websites (youtube.com, github.com)
 5. Wait ~60s, then open the background service worker's console (DevTools → Service Worker)
 6. Verify no errors and that `chrome.storage.local` has `usage_<today>` entries
@@ -757,12 +757,12 @@ header a {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Panopticon</title>
+  <title>Hourglass</title>
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
   <header>
-    <h1>PANOPTICON</h1>
+    <h1>HOURGLASS</h1>
     <a id="dashboard-link" href="#">Full report →</a>
   </header>
 
@@ -1076,13 +1076,13 @@ body {
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Panopticon Dashboard</title>
+  <title>Hourglass Dashboard</title>
   <link rel="stylesheet" href="options.css">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
 </head>
 <body>
   <nav id="sidebar">
-    <div class="logo">PANOPTICON</div>
+    <div class="logo">HOURGLASS</div>
     <div class="nav-item active" data-section="overview">📊 Overview</div>
     <div class="nav-item" data-section="history">📅 History</div>
     <div class="nav-item" data-section="sites">🌐 Sites</div>

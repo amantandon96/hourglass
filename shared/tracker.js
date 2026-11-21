@@ -62,6 +62,29 @@ export function localDateStr(date = new Date()) {
 }
 
 /**
+ * Split an elapsed interval into whole seconds grouped by local calendar date.
+ */
+export function splitElapsedByLocalDate(startMs, endMs) {
+  if (endMs <= startMs) return {};
+
+  const result = {};
+  let cursor = startMs;
+  while (cursor < endMs) {
+    const current = new Date(cursor);
+    const midnight = new Date(current);
+    midnight.setHours(24, 0, 0, 0);
+    const segmentEnd = Math.min(endMs, midnight.getTime());
+    const seconds = Math.floor((segmentEnd - cursor) / 1000);
+    if (seconds > 0) {
+      const dateStr = localDateStr(current);
+      result[dateStr] = (result[dateStr] ?? 0) + seconds;
+    }
+    cursor = segmentEnd;
+  }
+  return result;
+}
+
+/**
  * Return the date string N days before the given date.
  */
 export function daysAgo(n, from = new Date()) {
@@ -78,4 +101,43 @@ export function nextMidnight() {
   const d = new Date();
   d.setHours(24, 0, 0, 0);
   return d;
+}
+
+/**
+ * Returns the category object whose `domains` array includes `domain`, or null.
+ * @param {string} domain
+ * @param {Array<{id:string, name:string, budgetMinutes:number, domains:string[]}>} categories
+ */
+export function getCategoryForDomain(domain, categories) {
+  for (const cat of categories) {
+    if (cat.domains.includes(domain)) return cat;
+  }
+  return null;
+}
+
+/**
+ * Sums seconds for all domains that belong to `category`.
+ * @param {{ [domain: string]: number }} usage  — { domain: seconds }
+ * @param {{ domains: string[] }} category
+ * @returns {number}
+ */
+export function computeCategorySeconds(usage, category) {
+  const set = new Set(category.domains);
+  return Object.entries(usage).reduce((sum, [domain, seconds]) => {
+    return set.has(domain) ? sum + seconds : sum;
+  }, 0);
+}
+
+/**
+ * Returns { categoryId: seconds } for every category.
+ * @param {{ [domain: string]: number }} usage
+ * @param {Array<{id:string, domains:string[]}>} categories
+ * @returns {{ [categoryId: string]: number }}
+ */
+export function computeAllCategoryUsage(usage, categories) {
+  const result = {};
+  for (const cat of categories) {
+    result[cat.id] = computeCategorySeconds(usage, cat);
+  }
+  return result;
 }

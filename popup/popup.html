@@ -3,29 +3,18 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Panopticon</title>
+  <title>Hourglass</title>
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
   <header>
-    <h1>PANOPTICON</h1>
+    <h1>HOURGLASS</h1>
     <a id="dashboard-link" href="#">Full report →</a>
   </header>
 
-  <div class="budget-card">
-    <div class="label">Daily Leisure Budget</div>
-    <div class="bar-wrap">
-      <div class="bar-fill" id="budget-bar" style="width:0%"></div>
-    </div>
-    <div class="budget-meta">
-      <span id="used-label">0m used</span>
-      <span class="remaining" id="remaining-label">Loading…</span>
-    </div>
-  </div>
+  <div id="category-list"></div>
 
-  <div class="site-list" id="site-list">
-    <div class="empty">No activity tracked today.</div>
-  </div>
+  <div class="site-list" id="site-list"></div>
 
   <script type="module" src="popup.js"></script>
 </body>
