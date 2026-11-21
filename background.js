@@ -24,7 +24,7 @@ async function runMigrationIfNeeded() {
   if (migrated) return; // already done
   if (!v1Settings?.leisureDomains) return; // fresh install — no v1 data
 
-  console.log('[panopticon] Migrating v1 data to IndexedDB...');
+  console.log('[hourglass] Migrating v1 data to IndexedDB...');
 
   // 1. Build v2 settings from v1
   const v2Settings = {
@@ -72,7 +72,7 @@ async function runMigrationIfNeeded() {
     await chrome.storage.local.remove(keysToRemove);
   }
 
-  console.log('[panopticon] Migration complete.');
+  console.log('[hourglass] Migration complete.');
 }
 
 // ---------------------------------------------------------------------------

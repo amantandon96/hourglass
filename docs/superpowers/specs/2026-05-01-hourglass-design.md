@@ -1,4 +1,4 @@
-# Panopticon — Chrome Extension Design Spec
+# Hourglass — Chrome Extension Design Spec
 
 **Date:** 2026-05-01  
 **Status:** Approved
@@ -7,7 +7,7 @@
 
 ## Overview
 
-Panopticon is a Chrome extension that tracks time spent on **all** websites, enforces a configurable daily leisure budget (counted only against designated leisure domains), and provides a productivity audit dashboard. All data is stored locally — no backend, no sync.
+Hourglass is a Chrome extension that tracks time spent on **all** websites, enforces a configurable daily leisure budget (counted only against designated leisure domains), and provides a productivity audit dashboard. All data is stored locally — no backend, no sync.
 
 **Core goals:**
 1. Self-control: alert the user when they exceed their daily leisure budget
@@ -150,7 +150,7 @@ The active adapter is instantiated once in `shared/storage/index.js` and exporte
 ## File Structure
 
 ```
-panopticon/
+hourglass/
 ├── manifest.json
 ├── background.js
 ├── popup/

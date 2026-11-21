@@ -1,8 +1,8 @@
-# Panopticon v2 — Multi-Category Budgets & IndexedDB Design Spec
+# Hourglass v2 — Multi-Category Budgets & IndexedDB Design Spec
 
 **Date:** 2026-05-02  
 **Status:** Approved  
-**Builds on:** `docs/superpowers/specs/2026-05-01-panopticon-design.md` (v1)
+**Builds on:** `docs/superpowers/specs/2026-05-01-hourglass-design.md` (v1)
 
 ---
 
@@ -157,7 +157,7 @@ Replaces the single budget bar with **one stacked card per category**, sorted by
 
 ```
 ┌─────────────────────────────────┐
-│ PANOPTICON          Full report │
+│ HOURGLASS          Full report │
 ├─────────────────────────────────┤
 │ SOCIAL                          │
 │ [████████████░░░░░] 72%         │

@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Panopticon",
+  "name": "Hourglass",
   "version": "0.1.0",
-  "description": "Track your browsing time and enforce a daily leisure budget.",
+  "description": "See where your browser time goes. All data stays on your device — nothing is ever sent anywhere.",
   "permissions": [
     "tabs",
     "storage",

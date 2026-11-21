@@ -206,7 +206,7 @@ existing behavior of stopping the pre-midnight interval.
 ### Task 3: Verify lifecycle behavior and update documentation
 
 **Files:**
-- Modify: `docs/superpowers/specs/2026-05-01-panopticon-design.md:88-103,136-145`
+- Modify: `docs/superpowers/specs/2026-05-01-hourglass-design.md:88-103,136-145`
 - Modify: `docs/superpowers/specs/2026-07-26-persist-active-session-design.md`
 
 - [ ] **Step 1: Run all automated tests**

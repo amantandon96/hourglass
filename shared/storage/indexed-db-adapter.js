@@ -7,6 +7,7 @@ export class IndexedDbAdapter {
 
   _openDb() {
     return new Promise((resolve, reject) => {
+      // DB name kept from the project's former name so existing installs keep their data.
       const req = indexedDB.open('panopticon', 1);
 
       req.onupgradeneeded = (event) => {

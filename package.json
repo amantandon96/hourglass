@@ -1,4 +1,5 @@
 {
+  "name": "hourglass",
   "private": true,
   "type": "module",
   "scripts": {

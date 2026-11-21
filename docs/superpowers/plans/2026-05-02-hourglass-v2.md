@@ -1,4 +1,4 @@
-# Panopticon v2 — Multi-Category Budgets & IndexedDB Implementation Plan
+# Hourglass v2 — Multi-Category Budgets & IndexedDB Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -13,7 +13,7 @@
 ## File Map
 
 ```
-panopticon/
+hourglass/
 ├── background.js                           # MODIFY: per-category checks, migration call
 ├── shared/
 │   ├── constants.js                        # MODIFY: remove v1 leisure defaults, add DEFAULT_CATEGORIES
@@ -62,7 +62,7 @@ export const DEFAULT_SETTINGS = {
 
 - [ ] **Step 2: Verify no compilation errors**
 
-Load `chrome://extensions`, click Reload on Panopticon, confirm no service worker errors in the console (the extension will still use `chrome.storage.local` until Task 4 — that's fine for now).
+Load `chrome://extensions`, click Reload on Hourglass, confirm no service worker errors in the console (the extension will still use `chrome.storage.local` until Task 4 — that's fine for now).
 
 - [ ] **Step 3: Commit**
 
@@ -342,7 +342,7 @@ export const storage = new IndexedDbAdapter();
 
 - [ ] **Step 3: Reload extension and verify IndexedDB works**
 
-1. Go to `chrome://extensions`, click **Reload** on Panopticon
+1. Go to `chrome://extensions`, click **Reload** on Hourglass
 2. Open service worker devtools → Console
 3. Confirm no errors on startup
 4. Browse a couple websites for 30 seconds
@@ -383,7 +383,7 @@ async function runMigrationIfNeeded() {
   if (migrated) return; // already done
   if (!v1Settings?.leisureDomains) return; // fresh install — no v1 data
 
-  console.log('[panopticon] Migrating v1 data to IndexedDB...');
+  console.log('[hourglass] Migrating v1 data to IndexedDB...');
 
   // 1. Build v2 settings from v1
   const v2Settings = {
@@ -431,7 +431,7 @@ async function runMigrationIfNeeded() {
     await chrome.storage.local.remove(keysToRemove);
   }
 
-  console.log('[panopticon] Migration complete.');
+  console.log('[hourglass] Migration complete.');
 }
 ```
 
