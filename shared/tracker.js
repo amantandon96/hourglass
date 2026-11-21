@@ -94,6 +94,31 @@ export function daysAgo(n, from = new Date()) {
 }
 
 /**
+ * Parse a YYYY-MM-DD string as a local date (at noon, so DST shifts can't move it
+ * to a neighbouring day).
+ */
+export function parseLocalDate(dateStr) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return new Date(y, m - 1, d, 12);
+}
+
+/**
+ * Every YYYY-MM-DD from start to end, inclusive. Steps by calendar day rather than
+ * by 24h of milliseconds, which would repeat or skip a date across DST changes.
+ * Returns [] when start is after end.
+ */
+export function datesBetween(startStr, endStr) {
+  const out = [];
+  const d = parseLocalDate(startStr);
+  const end = parseLocalDate(endStr);
+  while (d <= end) {
+    out.push(localDateStr(d));
+    d.setDate(d.getDate() + 1);
+  }
+  return out;
+}
+
+/**
  * Return the Date object for the next midnight (local time).
  * Used to schedule the midnight-reset alarm.
  */

@@ -6,6 +6,8 @@ import {
   formatDuration,
   localDateStr,
   daysAgo,
+  parseLocalDate,
+  datesBetween,
 } from '../shared/tracker.js';
 import {
   categoryStyle,
@@ -14,7 +16,7 @@ import {
   isDarkMode,
 } from '../shared/palette.js';
 import { icon, escapeHtml } from '../shared/icons.js';
-import { DEFAULT_SETTINGS } from '../shared/constants.js';
+import { DEFAULT_SETTINGS, PRUNE_DAYS } from '../shared/constants.js';
 import { wireThemeToggle, THEME_TOGGLE_HTML } from '../shared/theme-toggle.js';
 
 let settings = null;
@@ -35,13 +37,9 @@ function showToast(msg) {
   toastTimer = setTimeout(() => el.classList.remove('visible'), 2600);
 }
 
-function parseLocalDate(dateStr) {
-  const [y, m, d] = dateStr.split('-').map(Number);
-  return new Date(y, m - 1, d);
-}
-
 const dayLong = new Intl.DateTimeFormat(undefined, { weekday: 'long', day: 'numeric', month: 'long' });
 const dayShort = new Intl.DateTimeFormat(undefined, { weekday: 'short', day: 'numeric' });
+const monthDay = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' });
 
 function dayLabel(dateStr) {
   if (dateStr === localDateStr()) return 'Today';
@@ -114,7 +112,106 @@ async function loadData() {
   settings = (await storage.getSettings()) ?? structuredClone(DEFAULT_SETTINGS);
   settings.categories ??= [];
   weeklyUsage = await storage.getUsageRange(daysAgo(6), localDateStr());
+  await loadRangeUsage();
 }
+
+// ---------------------------------------------------------------------------
+// Overview time frame
+// ---------------------------------------------------------------------------
+const RANGE_KEY = 'hourglass-overview-range';
+const PRESETS = ['1', '7', '30', '90'];
+const SITE_ROWS = 25;
+
+let range = loadRange(); // { preset: '1'|'7'|'30'|'90'|'custom', from, to } as YYYY-MM-DD
+let rangeUsage = {};     // { 'YYYY-MM-DD': { domain: seconds } } for the selected range
+let showAllSites = false;
+
+function presetRange(preset) {
+  return { preset, from: daysAgo(Number(preset) - 1), to: localDateStr() };
+}
+
+/** Keep a custom range inside the data we actually retain, and in order. */
+function clampRange({ preset, from, to }) {
+  const min = daysAgo(PRUNE_DAYS - 1);
+  const max = localDateStr();
+  const clamp = (d) => (d < min ? min : d > max ? max : d); // YYYY-MM-DD compares as text
+  from = clamp(from);
+  to = clamp(to);
+  if (from > to) [from, to] = [to, from];
+  return { preset, from, to };
+}
+
+function loadRange() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(RANGE_KEY));
+    if (saved?.preset === 'custom' && saved.from && saved.to) return clampRange(saved);
+    if (PRESETS.includes(saved?.preset)) return presetRange(saved.preset); // recomputed: "last 7 days" moves with today
+  } catch { /* fall through to default */ }
+  return presetRange('7');
+}
+
+function saveRange() {
+  try { localStorage.setItem(RANGE_KEY, JSON.stringify(range)); } catch { /* per-viewer convenience only */ }
+}
+
+async function loadRangeUsage() {
+  rangeUsage = await storage.getUsageRange(range.from, range.to);
+}
+
+function rangeText() {
+  const { preset, from, to } = range;
+  if (from === to) return from === localDateStr() ? `Today, ${dayLong.format(parseLocalDate(from))}` : dayLong.format(parseLocalDate(from));
+  const span = monthDay.formatRange(parseLocalDate(from), parseLocalDate(to));
+  return preset === 'custom' ? `${span} (${datesBetween(from, to).length} days)` : `Last ${preset} days, ${span}`;
+}
+
+const rangePresets = document.getElementById('range-presets');
+const rangeCustom = document.getElementById('range-custom');
+const rangeFrom = document.getElementById('range-from');
+const rangeTo = document.getElementById('range-to');
+
+function syncRangeControls() {
+  rangePresets.querySelectorAll('input').forEach((r) => { r.checked = r.value === range.preset; });
+  rangeCustom.hidden = range.preset !== 'custom';
+  for (const input of [rangeFrom, rangeTo]) {
+    input.min = daysAgo(PRUNE_DAYS - 1);
+    input.max = localDateStr();
+  }
+  rangeFrom.value = range.from;
+  rangeTo.value = range.to;
+}
+
+async function applyRange(next) {
+  range = next;
+  saveRange();
+  showAllSites = false;
+  syncRangeControls();
+  await loadRangeUsage();
+  renderOverview();
+}
+
+rangePresets.addEventListener('change', async (e) => {
+  const value = e.target.value;
+  if (value === 'custom') {
+    // Start from whatever is showing now, then let the dates be adjusted.
+    await applyRange({ ...range, preset: 'custom' });
+    rangeFrom.focus();
+  } else {
+    await applyRange(presetRange(value));
+  }
+});
+
+for (const input of [rangeFrom, rangeTo]) {
+  input.addEventListener('change', () => {
+    if (!rangeFrom.value || !rangeTo.value) return; // mid-edit
+    applyRange(clampRange({ preset: 'custom', from: rangeFrom.value, to: rangeTo.value }));
+  });
+}
+
+document.getElementById('overview-show-all').addEventListener('click', () => {
+  showAllSites = true;
+  renderOverview();
+});
 
 // ---------------------------------------------------------------------------
 // Overview
@@ -123,12 +220,61 @@ function cssVar(name) {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 }
 
-function renderChart() {
-  const categories = settings.categories;
-  const dates = Array.from({ length: 7 }, (_, i) => daysAgo(6 - i));
-  const mode = isDarkMode() ? 'dark' : 'light';
+/**
+ * Chart columns. Up to a month: one bar per day. Longer: one bar per calendar week
+ * (Monday start), since 90 daily bars are too thin to read. Edge weeks may be partial;
+ * their tooltip shows the real dates covered.
+ */
+function chartBuckets(dates) {
+  const today = localDateStr();
+  if (dates.length <= 31) {
+    const fmt = dates.length <= 14 ? dayShort : monthDay;
+    return dates.map((d) => ({
+      label: d === today ? 'Today' : fmt.format(parseLocalDate(d)),
+      title: dayLabel(d),
+      dates: [d],
+    }));
+  }
+  const weeks = [];
+  for (const d of dates) {
+    const dt = parseLocalDate(d);
+    dt.setDate(dt.getDate() - ((dt.getDay() + 6) % 7)); // back to Monday
+    const key = localDateStr(dt);
+    if (weeks.at(-1)?.key !== key) weeks.push({ key, dates: [] });
+    weeks.at(-1).dates.push(d);
+  }
+  return weeks.map(({ dates: w }) => {
+    const first = parseLocalDate(w[0]);
+    const last = parseLocalDate(w.at(-1));
+    return {
+      label: monthDay.format(first),
+      title: w.length === 1 ? dayLabel(w[0]) : monthDay.formatRange(first, last),
+      dates: w,
+    };
+  });
+}
 
-  const minutesFor = (fn) => dates.map((d) => Math.round(fn(weeklyUsage[d] ?? {}) / 60));
+function renderChart() {
+  const panel = document.getElementById('overview-chart-panel');
+  const dates = datesBetween(range.from, range.to);
+  // One day is one bar: the summary and site table already say everything it would.
+  panel.hidden = dates.length < 2;
+  if (panel.hidden) {
+    weeklyChart?.destroy();
+    weeklyChart = null;
+    return;
+  }
+
+  const categories = settings.categories;
+  const buckets = chartBuckets(dates);
+  const weekly = buckets.length < dates.length;
+  const mode = isDarkMode() ? 'dark' : 'light';
+  const partial = weekly && (buckets[0].dates.length < 7 || buckets.at(-1).dates.length < 7);
+  document.getElementById('overview-chart-meta').textContent =
+    !weekly ? 'Per day' : partial ? 'Per week, first or last week partial' : 'Per week';
+
+  const minutesFor = (fn) => buckets.map((b) =>
+    Math.round(b.dates.reduce((s, d) => s + fn(rangeUsage[d] ?? {}), 0) / 60));
 
   const datasets = categories.map((cat) => ({
     label: cat.name,
@@ -165,26 +311,27 @@ function renderChart() {
         const later = ctx.chart.data.datasets.slice(ctx.datasetIndex + 1);
         const isTop = later.every((d, j) =>
           !d.data[ctx.dataIndex] || !ctx.chart.isDatasetVisible(ctx.datasetIndex + 1 + j));
-        return isTop ? { topLeft: 4, topRight: 4 } : 0;
+        return isTop ? { topLeft: buckets.length > 40 ? 2 : 4, topRight: buckets.length > 40 ? 2 : 4 } : 0;
       },
       maxBarThickness: 44,
     });
   }
 
   const fmtMin = (m) => formatDuration(m * 60);
-  // Tick spacing in whole, readable units (15m, 30m, 1h, 2h...) for about 4 gridlines.
+  // Tick spacing in whole, readable units (15m, 1h, 2h, 10h...) for about 4 gridlines.
   const niceStep = (sets) => {
-    const max = Math.max(1, ...dates.map((_, i) => sets.reduce((s, d) => s + d.data[i], 0)));
-    return [5, 10, 15, 30, 60, 120, 180, 240, 360].find((s) => max / s <= 5) ?? 480;
+    const max = Math.max(1, ...buckets.map((_, i) => sets.reduce((s, d) => s + d.data[i], 0)));
+    return [5, 10, 15, 30, 60, 120, 180, 240, 360, 600, 900, 1200, 1800, 3000, 6000]
+      .find((s) => max / s <= 5) ?? 12000;
   };
 
   Chart.defaults.font.family = cssVar('--font');
   Chart.defaults.font.size = 12;
 
-  if (weeklyChart) weeklyChart.destroy();
+  weeklyChart?.destroy();
   weeklyChart = new Chart(document.getElementById('weekly-chart'), {
     type: 'bar',
-    data: { labels: dates.map((d) => (d === localDateStr() ? 'Today' : dayShort.format(parseLocalDate(d)))), datasets },
+    data: { labels: buckets.map((b) => b.label), datasets },
     options: {
       maintainAspectRatio: false,
       animation: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? false : { duration: 300 },
@@ -207,6 +354,7 @@ function renderChart() {
           usePointStyle: true,
           filter: (item) => item.raw > 0,
           callbacks: {
+            title: (items) => (items.length ? buckets[items[0].dataIndex].title : ''),
             label: (item) => ` ${item.dataset.label}: ${fmtMin(item.raw)}`,
             footer: (items) => `Total: ${fmtMin(items.reduce((s, i) => s + i.raw, 0))}`,
           },
@@ -215,7 +363,7 @@ function renderChart() {
       scales: {
         x: {
           stacked: true,
-          ticks: { color: ink3 },
+          ticks: { color: ink3, maxRotation: 0, autoSkip: true, autoSkipPadding: 12 },
           grid: { display: false },
           border: { color: cssVar('--line') },
         },
@@ -232,33 +380,50 @@ function renderChart() {
 }
 
 function renderOverview() {
-  const today = localDateStr();
-  const todayUsage = weeklyUsage[today] ?? {};
   const categories = settings.categories;
+  const dates = datesBetween(range.from, range.to);
 
-  document.getElementById('overview-date').textContent = dayLong.format(new Date());
+  document.getElementById('overview-range-label').textContent = rangeText();
 
-  const todaySec = sumValues(todayUsage);
-  const weekSec = Object.values(weeklyUsage).reduce((s, u) => s + sumValues(u), 0);
-  const activeDays = Object.values(weeklyUsage).filter((u) => sumValues(u) > 0).length;
-  const avgSec = activeDays ? weekSec / activeDays : 0;
+  const siteTotals = {};
+  for (const d of dates) {
+    for (const [domain, sec] of Object.entries(rangeUsage[d] ?? {})) {
+      siteTotals[domain] = (siteTotals[domain] ?? 0) + sec;
+    }
+  }
+  const totalSec = sumValues(siteTotals);
+  const activeDays = dates.filter((d) => sumValues(rangeUsage[d] ?? {}) > 0).length;
+  const sites = Object.entries(siteTotals).sort(([, a], [, b]) => b - a);
 
   document.getElementById('overview-summary').innerHTML = `
-    <div><dt>Today</dt><dd>${formatDuration(todaySec)}</dd></div>
-    <div><dt>Last 7 days</dt><dd>${formatDuration(weekSec)}</dd></div>
-    <div><dt>Daily average</dt><dd>${formatDuration(avgSec)}</dd></div>`;
+    <div><dt>${dates.length === 1 ? 'Tracked' : 'Total'}</dt><dd>${formatDuration(totalSec)}</dd></div>
+    ${dates.length > 1 ? `<div><dt>Per active day</dt><dd>${formatDuration(activeDays ? totalSec / activeDays : 0)}</dd></div>
+    <div><dt>Active days</dt><dd>${activeDays} of ${dates.length}</dd></div>` : ''}
+    <div><dt>Sites</dt><dd>${sites.length}</dd></div>`;
 
   renderChart();
 
-  const rows = Object.entries(todayUsage).sort(([, a], [, b]) => b - a);
-  document.getElementById('overview-site-tbody').innerHTML = rows.map(([domain, sec]) => {
+  document.getElementById('overview-sites-meta').textContent = sites.length
+    ? `${sites.length} ${sites.length === 1 ? 'site' : 'sites'}` : '';
+
+  const shown = showAllSites ? sites : sites.slice(0, SITE_ROWS);
+  document.getElementById('overview-site-tbody').innerHTML = shown.map(([domain, sec]) => {
     const cat = getCategoryForDomain(domain, categories);
+    const share = totalSec ? (sec / totalSec) * 100 : 0;
     return `<tr>
       <td class="t-domain">${escapeHtml(domain)}</td>
       <td>${cat ? categoryChip(cat) : assignSelect(domain)}</td>
+      <td class="t-num t-share">${share < 1 ? '<1' : Math.round(share)}%</td>
       <td class="t-num">${formatDuration(sec)}</td>
     </tr>`;
-  }).join('') || '<tr><td colspan="3" class="t-empty">Nothing tracked yet today. Browse as usual and sites will appear here.</td></tr>';
+  }).join('') || `<tr><td colspan="4" class="t-empty">${
+    range.to === localDateStr() && dates.length === 1
+      ? 'Nothing tracked yet today. Browse as usual and sites will appear here.'
+      : 'Nothing was tracked in this time frame.'}</td></tr>`;
+
+  const more = document.getElementById('overview-show-all');
+  more.hidden = showAllSites || sites.length <= SITE_ROWS;
+  more.textContent = `Show all ${sites.length} sites`;
 }
 
 // ---------------------------------------------------------------------------
@@ -628,6 +793,7 @@ async function renderAll() {
 
 async function init() {
   showSection(location.hash.slice(1));
+  syncRangeControls();
   await Promise.all([loadData(), document.fonts.ready]);
   await renderAll();
   renderSettings();
